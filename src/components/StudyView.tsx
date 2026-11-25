@@ -90,10 +90,14 @@ export function StudyView({
   }, [activeModuleId, onSelectModule]);
 
   useEffect(() => {
-    if (selectedLogId) {
-      const found = logs.find((l) => l.id === selectedLogId);
-      if (found) setEditingLog({ ...found });
-    }
+    if (!selectedLogId) return;
+    const found = logs.find((l) => l.id === selectedLogId);
+    if (!found) return;
+    setEditingLog((cur) => {
+      if (!cur || cur.id !== found.id) return { ...found };
+      if (cur.updated_at !== found.updated_at && cur.content === found.content) return { ...found };
+      return cur;
+    });
   }, [selectedLogId, logs]);
 
   const startNewLog = async (preferredModId?: string) => {

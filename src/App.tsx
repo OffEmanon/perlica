@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BookOpen,
   CalendarCheck,
@@ -54,6 +54,8 @@ export default function App() {
   const [providers, setProviders] = useState<AiProvider[]>([]);
   const [githubStatus, setGithubStatus] = useState<GithubSyncStatus | null>(null);
   const [syncingQuick, setSyncingQuick] = useState(false);
+  const lastAutoSyncRef = useRef<number>(0);
+  const autoSyncBusyRef = useRef<boolean>(false);
 
   // View focus state
   const [activeModuleId, setActiveModuleId] = useState<string>('all');
@@ -135,21 +137,71 @@ export default function App() {
     }
   }, [showToast, refreshAuth]);
 
+  const runSilentAutoSync = useCallback(
+    async (minGapMs = 6000) => {
+      if (autoSyncBusyRef.current) return;
+      if (Date.now() - lastAutoSyncRef.current < minGapMs) return;
+      autoSyncBusyRef.current = true;
+      setSyncingQuick(true);
+      try {
+        await api.syncGithubNow();
+        lastAutoSyncRef.current = Date.now();
+        await refreshAll();
+      } catch {
+        // silent background failure; status shows in Settings
+      } finally {
+        autoSyncBusyRef.current = false;
+        setSyncingQuick(false);
+      }
+    },
+    [refreshAll]
+  );
+
   useEffect(() => {
     refreshAuth().then((st) => {
       if (st?.authenticated) {
         refreshAll().then(() => {
-          if (IS_STATIC_MODE) {
-            api.getGithubSyncStatus().then((g) => {
+          api
+            .getGithubSyncStatus()
+            .then((g) => {
               if (g.configured && g.autoSync) {
-                api.syncGithubNow().then(() => refreshAll()).catch(() => {});
+                runSilentAutoSync(0);
               }
-            }).catch(() => {});
-          }
+            })
+            .catch(() => {});
         });
       }
     });
-  }, [refreshAuth, refreshAll]);
+  }, [refreshAuth, refreshAll, runSilentAutoSync]);
+
+  // Automatic background sync on tab return / app resume / network reconnect + 25s foreground poll
+  useEffect(() => {
+    if (!githubStatus?.configured || !githubStatus.autoSync) return;
+
+    const handleResume = () => {
+      if (document.visibilityState === 'visible') {
+        runSilentAutoSync(5000);
+      }
+    };
+    const handleOnline = () => runSilentAutoSync(2000);
+
+    document.addEventListener('visibilitychange', handleResume);
+    window.addEventListener('focus', handleResume);
+    window.addEventListener('online', handleOnline);
+
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        runSilentAutoSync(20000);
+      }
+    }, 25000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleResume);
+      window.removeEventListener('focus', handleResume);
+      window.removeEventListener('online', handleOnline);
+      window.clearInterval(timer);
+    };
+  }, [githubStatus?.configured, githubStatus?.autoSync, runSilentAutoSync]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

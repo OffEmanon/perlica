@@ -563,5 +563,5 @@ export function scheduleAutoSync(): void {
   autoSyncTimer = setTimeout(() => {
     autoSyncTimer = null;
     syncWithGithubNow().catch(() => {});
-  }, 4000);
+  }, 1500);
 }

@@ -37,16 +37,31 @@ export function IdeasView({
   const [creating, setCreating] = useState<'save' | 'ai' | null>(null);
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<GameIdea | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [organizing, setOrganizing] = useState(false);
   const [newTag, setNewTag] = useState('');
 
+  const updateEditing = (next: GameIdea) => {
+    setEditing(next);
+    setIsDirty(true);
+  };
+
   useEffect(() => {
-    if (selectedIdeaId) {
-      const found = ideas.find((i) => i.id === selectedIdeaId);
-      if (found) setEditing({ ...found });
-    }
-  }, [selectedIdeaId, ideas]);
+    if (!selectedIdeaId) return;
+    const found = ideas.find((i) => i.id === selectedIdeaId);
+    if (!found) return;
+    setEditing((cur) => {
+      if (!cur || cur.id !== found.id) {
+        setIsDirty(false);
+        return { ...found };
+      }
+      if (!isDirty && cur.updated_at !== found.updated_at) {
+        return { ...found };
+      }
+      return cur;
+    });
+  }, [selectedIdeaId, ideas, isDirty]);
 
   const filtered = ideas.filter((i) => {
     if (!search.trim()) return true;
@@ -109,6 +124,7 @@ export function IdeasView({
         ai_notes: editing.ai_notes,
       });
       setEditing(updated);
+      setIsDirty(false);
       onRefresh();
       onToast('已保存');
     } catch (e) {
@@ -130,6 +146,7 @@ export function IdeasView({
       });
       const updated = await api.organizeIdea(editing.id);
       setEditing(updated);
+      setIsDirty(false);
       onRefresh();
       onToast('AI 已忠实整理完成（原文已完整保留）');
     } catch (e) {
@@ -154,7 +171,7 @@ export function IdeasView({
     if (!editing || !newTag.trim()) return;
     const t = newTag.trim();
     if (!editing.tags.includes(t)) {
-      setEditing({ ...editing, tags: [...editing.tags, t] });
+      updateEditing({ ...editing, tags: [...editing.tags, t] });
     }
     setNewTag('');
   };
@@ -335,7 +352,7 @@ export function IdeasView({
               {/* Editable Title */}
               <input
                 value={editing.title}
-                onChange={(e) => setEditing({ ...editing, title: e.target.value })}
+                onChange={(e) => updateEditing({ ...editing, title: e.target.value })}
                 placeholder="灵感标题..."
                 className="w-full text-lg font-bold bg-transparent focus:outline-none"
               />
@@ -350,7 +367,7 @@ export function IdeasView({
                     #{tag}
                     <button
                       onClick={() =>
-                        setEditing({ ...editing, tags: editing.tags.filter((t) => t !== tag) })
+                        updateEditing({ ...editing, tags: editing.tags.filter((t) => t !== tag) })
                       }
                     >
                       <X className="w-3 h-3" />
@@ -380,7 +397,7 @@ export function IdeasView({
                 <textarea
                   rows={5}
                   value={editing.content}
-                  onChange={(e) => setEditing({ ...editing, content: e.target.value })}
+                  onChange={(e) => updateEditing({ ...editing, content: e.target.value })}
                   placeholder="在这里写下你的原始想法..."
                   className="w-full bg-transparent text-sm leading-relaxed text-primary focus:outline-none resize-y"
                 />

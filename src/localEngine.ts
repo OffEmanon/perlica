@@ -240,7 +240,7 @@ function scheduleAutoSync(): void {
   autoSyncTimer = setTimeout(() => {
     autoSyncTimer = null;
     localEngine.syncGithubNow().catch(() => {});
-  }, 3500);
+  }, 1500);
 }
 
 function recordDeletion(state: LocalDbState, entityType: string, entityId: string): void {
