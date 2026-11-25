@@ -639,6 +639,7 @@ app.post('/api/ai/providers', (req, res) => {
     `INSERT INTO ai_providers (id, name, protocol, base_url, api_key, model, is_active, temperature, max_tokens, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(id, name.trim(), protocol, base_url.trim(), api_key.trim(), model.trim(), is_active ? 1 : 0, temperature, max_tokens, now);
+  scheduleAutoSync();
   res.status(201).json(db.prepare('SELECT * FROM ai_providers WHERE id = ?').get(id));
 });
 
@@ -675,15 +676,18 @@ app.put('/api/ai/providers/:id', (req, res) => {
     Number(max_tokens),
     req.params.id
   );
+  scheduleAutoSync();
   res.json(db.prepare('SELECT * FROM ai_providers WHERE id = ?').get(req.params.id));
 });
 
 app.delete('/api/ai/providers/:id', (req, res) => {
   db.prepare('DELETE FROM ai_providers WHERE id = ?').run(req.params.id);
+  recordDeletion('ai_providers', req.params.id);
   const hasActive = db.prepare('SELECT COUNT(*) as c FROM ai_providers WHERE is_active = 1').get() as { c: number };
   if (hasActive.c === 0) {
     db.prepare('UPDATE ai_providers SET is_active = 1 WHERE id = (SELECT id FROM ai_providers LIMIT 1)').run();
   }
+  scheduleAutoSync();
   res.json({ ok: true });
 });
 

@@ -267,7 +267,7 @@ export function StudyView({
   const activeModObj = activeModuleId !== 'all' ? moduleMap.get(activeModuleId) : null;
 
   return (
-    <div className="h-full flex flex-col gap-4 max-w-7xl mx-auto">
+    <div className="lg:h-full flex flex-col gap-4 max-w-7xl mx-auto min-w-0">
       {/* Top Module Filter Strip */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
@@ -351,10 +351,10 @@ export function StudyView({
       )}
 
       {/* Split Layout: List + Editor */}
-      <div className="grid lg:grid-cols-12 gap-4 flex-1 min-h-0">
+      <div className="flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:flex-1 lg:min-h-0">
         {/* List Pane */}
         <div
-          className={`lg:col-span-4 flex flex-col gap-3 min-h-0 ${
+          className={`lg:col-span-4 flex flex-col gap-3 lg:min-h-0 ${
             editingLog ? 'hidden lg:flex' : 'flex'
           }`}
         >

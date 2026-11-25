@@ -37,6 +37,7 @@ interface SyncSnapshot {
   study_logs: Record<string, unknown>[];
   game_ideas: Record<string, unknown>[];
   ai_reviews: Record<string, unknown>[];
+  ai_providers?: Record<string, unknown>[];
   prompt_templates: Record<string, unknown>[];
   ai_conversations: Record<string, unknown>[];
   ai_messages: Record<string, unknown>[];
@@ -169,13 +170,14 @@ async function pushSnapshot(token: string, gistId: string | null, snapshot: Sync
 
 function readLocalSnapshot(): SyncSnapshot {
   return {
-    version: 1,
+    version: 2,
     syncedAt: new Date().toISOString(),
     tombstones: db.prepare('SELECT * FROM sync_tombstones').all() as unknown as SyncTombstone[],
     modules: db.prepare('SELECT * FROM modules').all() as Record<string, unknown>[],
     study_logs: db.prepare('SELECT * FROM study_logs').all() as Record<string, unknown>[],
     game_ideas: db.prepare('SELECT * FROM game_ideas').all() as Record<string, unknown>[],
     ai_reviews: db.prepare('SELECT * FROM ai_reviews').all() as Record<string, unknown>[],
+    ai_providers: db.prepare('SELECT * FROM ai_providers').all() as Record<string, unknown>[],
     prompt_templates: db.prepare('SELECT * FROM prompt_templates').all() as Record<string, unknown>[],
     ai_conversations: db.prepare('SELECT * FROM ai_conversations').all() as Record<string, unknown>[],
     ai_messages: db.prepare('SELECT * FROM ai_messages').all() as Record<string, unknown>[],
@@ -216,6 +218,41 @@ function mergeRows(
   return result;
 }
 
+function mergeProviders(
+  localRows: Record<string, unknown>[],
+  remoteRows: Record<string, unknown>[] | undefined,
+  tombMap: Map<string, string>
+): Record<string, unknown>[] {
+  if (!remoteRows || remoteRows.length === 0) return localRows;
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const r of localRows) byId.set(String(r.id), r);
+  for (const r of remoteRows) {
+    const id = String(r.id);
+    const existing = byId.get(id);
+    if (!existing) {
+      byId.set(id, r);
+    } else {
+      const localKey = String(existing.api_key || '').trim();
+      const remoteKey = String(r.api_key || '').trim();
+      // Prefer whichever has an API key configured; if both do, prefer newer timestamp
+      if ((!localKey && remoteKey) || (localKey && remoteKey && rowTimestamp(r) > rowTimestamp(existing))) {
+        byId.set(id, r);
+      }
+    }
+  }
+  const merged: Record<string, unknown>[] = [];
+  for (const [id, row] of byId.entries()) {
+    const delAt = tombMap.get(`ai_providers:${id}`);
+    if (delAt && delAt >= rowTimestamp(row)) continue;
+    merged.push(row);
+  }
+  // Ensure one active provider, preferring one with an API key
+  const activeWithKey = merged.find((p) => Number(p.is_active) === 1 && String(p.api_key || '').trim() && String(p.api_key) !== 'ollama');
+  const anyWithKey = merged.find((p) => String(p.api_key || '').trim() && String(p.api_key) !== 'ollama');
+  const chosenId = activeWithKey ? String(activeWithKey.id) : anyWithKey ? String(anyWithKey.id) : merged[0] ? String(merged[0].id) : '';
+  return merged.map((p) => ({ ...p, is_active: String(p.id) === chosenId ? 1 : 0 }));
+}
+
 function mergeSnapshots(local: SyncSnapshot, remote: SyncSnapshot | null): SyncSnapshot {
   if (!remote) return local;
 
@@ -240,6 +277,7 @@ function mergeSnapshots(local: SyncSnapshot, remote: SyncSnapshot | null): SyncS
   );
   const game_ideas = mergeRows('game_ideas', local.game_ideas, remote.game_ideas, tombMap);
   const ai_reviews = mergeRows('ai_reviews', local.ai_reviews, remote.ai_reviews, tombMap);
+  const ai_providers = mergeProviders(local.ai_providers || [], remote.ai_providers, tombMap);
   const prompt_templates = mergeRows(
     'prompt_templates',
     local.prompt_templates,
@@ -254,13 +292,14 @@ function mergeSnapshots(local: SyncSnapshot, remote: SyncSnapshot | null): SyncS
   );
 
   return {
-    version: 1,
+    version: 2,
     syncedAt: new Date().toISOString(),
     tombstones: mergedTombstones,
     modules,
     study_logs,
     game_ideas,
     ai_reviews,
+    ai_providers,
     prompt_templates,
     ai_conversations,
     ai_messages,
@@ -365,6 +404,28 @@ function applySnapshotToDb(snap: SyncSnapshot): void {
         String(r.model_used || ''),
         String(r.created_at || new Date().toISOString())
       );
+    }
+
+    if (snap.ai_providers && snap.ai_providers.length > 0) {
+      db.exec('DELETE FROM ai_providers;');
+      const insProv = db.prepare(
+        `INSERT OR REPLACE INTO ai_providers (id, name, protocol, base_url, api_key, model, is_active, temperature, max_tokens, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      for (const p of snap.ai_providers) {
+        insProv.run(
+          String(p.id),
+          String(p.name),
+          String(p.protocol || 'openai'),
+          String(p.base_url || ''),
+          String(p.api_key || ''),
+          String(p.model || ''),
+          Number(p.is_active || 0),
+          Number(p.temperature ?? 0.7),
+          Number(p.max_tokens ?? 2048),
+          String(p.created_at || new Date().toISOString())
+        );
+      }
     }
 
     if (snap.prompt_templates.length > 0) {

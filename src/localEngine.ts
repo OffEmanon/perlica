@@ -54,6 +54,7 @@ interface SyncSnapshot {
   study_logs: Record<string, unknown>[];
   game_ideas: Record<string, unknown>[];
   ai_reviews: Record<string, unknown>[];
+  ai_providers?: Record<string, unknown>[];
   prompt_templates: Record<string, unknown>[];
   ai_conversations: Record<string, unknown>[];
   ai_messages: Record<string, unknown>[];
@@ -293,6 +294,7 @@ function stateToWireSnapshot(state: LocalDbState): SyncSnapshot {
       updated_at: i.updated_at,
     })),
     ai_reviews: state.ai_reviews.map((r) => ({ ...r })),
+    ai_providers: state.ai_providers.map((p) => ({ ...p })),
     prompt_templates: state.prompt_templates.map((t) => ({ ...t })),
     ai_conversations: state.ai_conversations.map((c) => ({ ...c })),
     ai_messages: state.ai_messages.map((m) => ({
@@ -386,6 +388,20 @@ function applyMergedWireSnapshot(state: LocalDbState, snap: SyncSnapshot): Local
     model_used: String(r.model_used || ''),
     created_at: String(r.created_at || new Date().toISOString()),
   }));
+  if (snap.ai_providers && snap.ai_providers.length > 0) {
+    state.ai_providers = snap.ai_providers.map((p) => ({
+      id: String(p.id),
+      name: String(p.name),
+      protocol: (p.protocol as AiProvider['protocol']) || 'openai',
+      base_url: String(p.base_url || ''),
+      api_key: String(p.api_key || ''),
+      model: String(p.model || ''),
+      is_active: Number(p.is_active || 0),
+      temperature: Number(p.temperature ?? 0.7),
+      max_tokens: Number(p.max_tokens ?? 2048),
+      created_at: String(p.created_at || new Date().toISOString()),
+    }));
+  }
   if (snap.prompt_templates.length > 0) {
     state.prompt_templates = snap.prompt_templates.map((t) => ({
       id: String(t.id),
@@ -748,6 +764,31 @@ export const localEngine = {
         );
         const game_ideas = mergeWireRows('game_ideas', localSnap.game_ideas, remote.game_ideas, tombMap);
         const ai_reviews = mergeWireRows('ai_reviews', localSnap.ai_reviews, remote.ai_reviews, tombMap);
+        // Merge AI providers (prefer configured API keys)
+        const provById = new Map<string, Record<string, unknown>>();
+        for (const p of localSnap.ai_providers || []) provById.set(String(p.id), p);
+        for (const p of remote.ai_providers || []) {
+          const id = String(p.id);
+          const cur = provById.get(id);
+          if (!cur) {
+            provById.set(id, p);
+          } else {
+            const lk = String(cur.api_key || '').trim();
+            const rk = String(p.api_key || '').trim();
+            if ((!lk && rk) || (lk && rk && rowTs(p) > rowTs(cur))) provById.set(id, p);
+          }
+        }
+        const mergedProvRaw: Record<string, unknown>[] = [];
+        for (const [id, p] of provById.entries()) {
+          const delAt = tombMap.get(`ai_providers:${id}`);
+          if (delAt && delAt >= rowTs(p)) continue;
+          mergedProvRaw.push(p);
+        }
+        const activeKeyProv = mergedProvRaw.find((p) => Number(p.is_active) === 1 && String(p.api_key || '').trim() && String(p.api_key) !== 'ollama');
+        const anyKeyProv = mergedProvRaw.find((p) => String(p.api_key || '').trim() && String(p.api_key) !== 'ollama');
+        const chosenProvId = activeKeyProv ? String(activeKeyProv.id) : anyKeyProv ? String(anyKeyProv.id) : mergedProvRaw[0] ? String(mergedProvRaw[0].id) : '';
+        const ai_providers = mergedProvRaw.map((p) => ({ ...p, is_active: String(p.id) === chosenProvId ? 1 : 0 }));
+
         const prompt_templates = mergeWireRows('prompt_templates', localSnap.prompt_templates, remote.prompt_templates, tombMap, 'key');
         const ai_conversations = mergeWireRows('ai_conversations', localSnap.ai_conversations, remote.ai_conversations, tombMap);
         const validConvIds = new Set(ai_conversations.map((c) => String(c.id)));
@@ -755,13 +796,14 @@ export const localEngine = {
           validConvIds.has(String(m.conversation_id))
         );
         merged = {
-          version: 1,
+          version: 2,
           syncedAt: new Date().toISOString(),
           tombstones: mergedTombs,
           modules,
           study_logs,
           game_ideas,
           ai_reviews,
+          ai_providers,
           prompt_templates,
           ai_conversations,
           ai_messages,
@@ -1043,6 +1085,7 @@ export const localEngine = {
     };
     st.ai_providers.push(created);
     saveState(st);
+    scheduleAutoSync();
     return created;
   },
   updateProvider: async (id: string, body: Partial<AiProvider>): Promise<AiProvider> => {
@@ -1052,15 +1095,18 @@ export const localEngine = {
     if (idx < 0) throw new Error('模型不存在');
     st.ai_providers[idx] = { ...st.ai_providers[idx], ...body };
     saveState(st);
+    scheduleAutoSync();
     return st.ai_providers[idx];
   },
   deleteProvider: async (id: string) => {
     const st = loadState();
     st.ai_providers = st.ai_providers.filter((p) => p.id !== id);
+    recordDeletion(st, 'ai_providers', id);
     if (!st.ai_providers.some((p) => p.is_active === 1) && st.ai_providers[0]) {
       st.ai_providers[0].is_active = 1;
     }
     saveState(st);
+    scheduleAutoSync();
     return { ok: true };
   },
   testProvider: async (id: string) => {

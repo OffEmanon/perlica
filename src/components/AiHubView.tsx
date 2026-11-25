@@ -248,35 +248,35 @@ export function AiHubView({
   };
 
   return (
-    <div className="h-full flex flex-col gap-4 max-w-7xl mx-auto">
+    <div className="lg:h-full flex flex-col gap-4 max-w-7xl mx-auto min-w-0">
       {/* Top Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 p-1 rounded-xl surface w-fit">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
+        <div className="grid grid-cols-2 sm:flex items-center gap-1.5 p-1 rounded-xl surface w-full sm:w-fit">
           <button
             onClick={() => setSubTab('review')}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
+            className={`inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-medium transition whitespace-nowrap ${
               subTab === 'review' ? 'bg-indigo-500 text-white' : 'text-secondary hover:text-primary'
             }`}
           >
-            <Award className="w-3.5 h-3.5" /> 自动复盘与评价汇总
+            <Award className="w-3.5 h-3.5 shrink-0" /> 自动复盘汇总
           </button>
           <button
             onClick={() => setSubTab('chat')}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
+            className={`inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-medium transition whitespace-nowrap ${
               subTab === 'chat' ? 'bg-indigo-500 text-white' : 'text-secondary hover:text-primary'
             }`}
           >
-            <MessageSquare className="w-3.5 h-3.5" /> 知识库 AI 参谋对话
+            <MessageSquare className="w-3.5 h-3.5 shrink-0" /> 知识库对话
           </button>
         </div>
 
         {/* Model Switcher */}
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-muted">当前模型：</span>
+        <div className="flex items-center gap-2 text-xs w-full sm:w-auto min-w-0">
+          <span className="text-muted shrink-0 whitespace-nowrap">当前模型：</span>
           <select
             value={selectedProviderId}
             onChange={(e) => setSelectedProviderId(e.target.value)}
-            className="px-3 py-1.5 rounded-xl surface text-primary font-medium focus:outline-none focus:border-indigo-500"
+            className="min-w-0 flex-1 sm:flex-none max-w-full px-3 py-1.5 rounded-xl surface text-primary font-medium focus:outline-none focus:border-indigo-500 truncate"
           >
             {providers.map((p) => (
               <option key={p.id} value={p.id} className="bg-[#141720]">
@@ -289,9 +289,9 @@ export function AiHubView({
 
       {/* TAB 1: AI REVIEW & EVALUATION */}
       {subTab === 'review' && (
-        <div className="grid lg:grid-cols-12 gap-4 flex-1 min-h-0">
+        <div className="flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:flex-1 lg:min-h-0">
           {/* Left: Generator + History */}
-          <div className="lg:col-span-4 flex flex-col gap-4 min-h-0">
+          <div className="lg:col-span-4 flex flex-col gap-4 lg:min-h-0">
             <div className="surface rounded-2xl p-4 space-y-3">
               <div className="text-sm font-semibold flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-indigo-400" /> 生成学习复盘评价
@@ -429,11 +429,11 @@ export function AiHubView({
           </div>
 
           {/* Right: Active Review Reader */}
-          <div className="lg:col-span-8 surface rounded-2xl p-5 overflow-y-auto min-h-[360px]">
+          <div className="lg:col-span-8 surface rounded-2xl p-4 sm:p-5 lg:overflow-y-auto min-h-[240px]">
             {!activeReview ? (
-              <div className="h-full flex flex-col items-center justify-center text-center text-muted py-12">
+              <div className="h-full flex flex-col items-center justify-center text-center text-muted py-10">
                 <CalendarRange className="w-9 h-9 mb-2 opacity-35" />
-                <p className="text-sm">点击左侧「一键生成 AI 评价汇总」，自动分析你的学习进度与任务完成度。</p>
+                <p className="text-sm">点击「一键生成 AI 评价汇总」，自动分析你的学习进度与任务完成度。</p>
                 <p className="text-xs mt-1">支持在设置中自由定制复盘评分标准与导师风格。</p>
               </div>
             ) : (
@@ -468,9 +468,9 @@ export function AiHubView({
 
       {/* TAB 2: KNOWLEDGE BASE AI CHAT */}
       {subTab === 'chat' && (
-        <div className="grid lg:grid-cols-12 gap-4 flex-1 min-h-0">
+        <div className="flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:flex-1 lg:min-h-0">
           {/* Conversation List */}
-          <div className="lg:col-span-3 surface rounded-2xl p-3 flex flex-col gap-2 min-h-0">
+          <div className="lg:col-span-3 surface rounded-2xl p-3 flex flex-col gap-2 lg:min-h-0">
             <button
               onClick={handleNewConversation}
               className="w-full py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/25 text-xs font-medium flex items-center justify-center gap-1.5 transition"

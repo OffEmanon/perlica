@@ -55,6 +55,7 @@ const PROTOCOL_PRESETS: Array<{
   base_url: string;
   model: string;
 }> = [
+  { label: '千问 AI 平台', protocol: 'openai', base_url: 'https://maas.qianwenaiapi.com/compatible-mode/v1', model: 'qwen-plus' },
   { label: 'DeepSeek', protocol: 'openai', base_url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
   { label: 'OpenAI', protocol: 'openai', base_url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   { label: 'Google Gemini (原生)', protocol: 'gemini', base_url: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash' },
@@ -391,8 +392,8 @@ export function SettingsView({
                   )}
                 </div>
                 <p className="text-xs text-secondary leading-relaxed">
-                  将你的板块、学习日志、游戏灵感和 AI 复盘自动双向合并到你的 <strong>GitHub 私有（Secret）Gist</strong>。
-                  电脑、云端部署或任意新设备只需填入同一个 GitHub Token，即可自动发现云端数据并实时互通（不同网络也能同步，且不包含你的 AI API Key 以保护隐私）。
+                  将你的板块、学习日志、游戏灵感、AI 复盘以及 <strong>AI 模型与 API Key</strong> 自动双向合并到你的 <strong>GitHub 私有（Secret）Gist</strong>。
+                  电脑和手机只需填入同一个 GitHub Token，即可自动同步全部数据与模型配置，无需重复填写 API Key。
                 </p>
               </div>
               {githubStatus?.configured && (
@@ -694,7 +695,7 @@ export function SettingsView({
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-xs text-secondary">
-              API Key 仅保存在你的本地 SQLite 数据库中，由本地服务端发起请求，不会被同步到 GitHub。
+              已配置好的模型与 API Key 会随 GitHub 私有（Secret）Gist 自动同步到手机端，无需在手机上重复填写。
             </p>
             <button
               onClick={() => setAdding((v) => !v)}

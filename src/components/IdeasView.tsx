@@ -174,7 +174,7 @@ export function IdeasView({
   };
 
   return (
-    <div className="h-full flex flex-col gap-4 max-w-7xl mx-auto">
+    <div className="lg:h-full flex flex-col gap-4 max-w-7xl mx-auto min-w-0">
       {/* Header & Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -238,10 +238,10 @@ export function IdeasView({
       </div>
 
       {/* Main Split View */}
-      <div className="grid lg:grid-cols-12 gap-4 flex-1 min-h-0">
+      <div className="flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:flex-1 lg:min-h-0">
         {/* Idea List */}
         <div
-          className={`lg:col-span-4 space-y-2.5 overflow-y-auto pr-1 ${
+          className={`lg:col-span-4 space-y-2.5 lg:overflow-y-auto lg:pr-1 ${
             editing ? 'hidden lg:block' : 'block'
           }`}
         >
