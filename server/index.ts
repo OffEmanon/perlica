@@ -842,6 +842,72 @@ app.post('/api/ai/evaluate-log/:id', async (req, res) => {
   }
 });
 
+// Game Idea Faithful AI Organize (preserve raw text, no embellishment)
+app.post('/api/ai/organize-idea/:id', async (req, res) => {
+  try {
+    const row = db.prepare('SELECT * FROM game_ideas WHERE id = ?').get(req.params.id) as
+      | Record<string, unknown>
+      | undefined;
+    if (!row) return res.status(404).json({ error: '灵感不存在' });
+    const idea = mapGameIdea(row);
+    const rawText = (idea.content || idea.title || '').trim();
+    if (!rawText) return res.status(400).json({ error: '请先写下你的原始灵感内容' });
+
+    const provider = getActiveProvider(req.body?.provider_id);
+    if (!provider) return res.status(400).json({ error: '请先在设置中配置 AI 模型' });
+
+    const tpl = getPromptTemplate('idea_organize');
+    const systemPrompt =
+      tpl?.system_prompt ||
+      '请忠实整理用户的原始灵感，严禁添油加醋，仅返回 JSON: {"title":"","tags":[],"organized":""}';
+
+    const raw = await callLlm(
+      provider,
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `请忠实整理以下原始灵感（严禁脑补未提及的设定）：\n\n${rawText}` },
+      ],
+      { temperature: 0.25 }
+    );
+
+    let nextTitle = idea.title;
+    let nextTags = idea.tags;
+    let organized = raw.trim();
+
+    try {
+      const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as {
+        title?: string;
+        tags?: string[];
+        organized?: string;
+      };
+      if (parsed.title?.trim()) nextTitle = parsed.title.trim().slice(0, 40);
+      if (Array.isArray(parsed.tags) && parsed.tags.length > 0) {
+        nextTags = Array.from(new Set(parsed.tags.slice(0, 5).map((t) => String(t).trim()).filter(Boolean)));
+      }
+      if (parsed.organized?.trim()) organized = parsed.organized.trim();
+    } catch {
+      // If model replied with plain markdown instead of JSON, keep it as organized text
+    }
+
+    const now = new Date().toISOString();
+    // Preserve idea.content untouched! Only update title, tags, and ai_notes (organized version)
+    db.prepare('UPDATE game_ideas SET title = ?, tags_json = ?, ai_notes = ?, updated_at = ? WHERE id = ?').run(
+      nextTitle,
+      JSON.stringify(nextTags),
+      organized,
+      now,
+      idea.id
+    );
+    scheduleAutoSync();
+    const updated = db.prepare('SELECT * FROM game_ideas WHERE id = ?').get(idea.id) as Record<string, unknown>;
+    res.json(mapGameIdea(updated));
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // Game Idea AI Co-pilot (expand | critique | crosslink)
 app.post('/api/ai/idea-assist/:id', async (req, res) => {
   try {

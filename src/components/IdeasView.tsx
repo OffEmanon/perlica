@@ -1,24 +1,16 @@
 import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
-  Flame,
   Gamepad2,
-  GitMerge,
-  LayoutGrid,
   Loader2,
-  Plus,
   Save,
   Search,
   Sparkles,
-  Tag,
-  Target,
   Trash2,
-  Wand2,
   X,
 } from 'lucide-react';
-import type { GameIdea, IdeaStatus } from '../types.ts';
+import type { GameIdea } from '../types.ts';
 import { api } from '../api.ts';
-import { MarkdownEditor } from './MarkdownEditor.tsx';
 import { MarkdownView } from './MarkdownView.tsx';
 
 interface IdeasViewProps {
@@ -29,13 +21,10 @@ interface IdeasViewProps {
   onToast: (msg: string, type?: 'ok' | 'err') => void;
 }
 
-const CATEGORIES = ['玩法机制', '世界观剧情', '美术风格', '系统数值', '关卡体验', '音频氛围', '完整立项'];
-const STATUS_META: Record<IdeaStatus, { label: string; color: string }> = {
-  spark: { label: '闪念火花', color: '#f59e0b' },
-  developing: { label: '深化打磨', color: '#6366f1' },
-  prototype: { label: '原型验证', color: '#10b981' },
-  archived: { label: '归档封存', color: '#64748b' },
-};
+function deriveShortTitle(raw: string): string {
+  const firstLine = raw.trim().split(/\r?\n/)[0] || '未命名灵感';
+  return firstLine.length > 22 ? `${firstLine.slice(0, 22)}...` : firstLine;
+}
 
 export function IdeasView({
   ideas,
@@ -44,13 +33,12 @@ export function IdeasView({
   onRefresh,
   onToast,
 }: IdeasViewProps) {
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [catFilter, setCatFilter] = useState<string>('all');
+  const [quickDraft, setQuickDraft] = useState('');
+  const [creating, setCreating] = useState<'save' | 'ai' | null>(null);
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<GameIdea | null>(null);
   const [saving, setSaving] = useState(false);
-  const [aiAction, setAiAction] = useState<string | null>(null);
-  const [customAiPrompt, setCustomAiPrompt] = useState('');
+  const [organizing, setOrganizing] = useState(false);
   const [newTag, setNewTag] = useState('');
 
   useEffect(() => {
@@ -61,37 +49,52 @@ export function IdeasView({
   }, [selectedIdeaId, ideas]);
 
   const filtered = ideas.filter((i) => {
-    if (statusFilter !== 'all' && i.status !== statusFilter) return false;
-    if (catFilter !== 'all' && i.category !== catFilter) return false;
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      return (
-        i.title.toLowerCase().includes(q) ||
-        i.summary.toLowerCase().includes(q) ||
-        i.content.toLowerCase().includes(q) ||
-        i.tags.some((t) => t.toLowerCase().includes(q))
-      );
-    }
-    return true;
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return (
+      i.title.toLowerCase().includes(q) ||
+      i.content.toLowerCase().includes(q) ||
+      i.ai_notes.toLowerCase().includes(q) ||
+      i.tags.some((t) => t.toLowerCase().includes(q))
+    );
   });
 
-  const handleNewIdea = async () => {
+  const handleQuickCreate = async (withAi: boolean) => {
+    const raw = quickDraft.trim();
+    if (!raw) return;
+    setCreating(withAi ? 'ai' : 'save');
     try {
       const created = await api.createIdea({
-        title: '未命名游戏灵感',
+        title: deriveShortTitle(raw),
+        content: raw,
         summary: '',
-        content: '### 核心直觉\n\n### 玩家体验钩子\n',
         category: '玩法机制',
         status: 'spark',
         priority: 2,
         tags: [],
       });
+      setQuickDraft('');
+      let finalIdea = created;
+      if (withAi) {
+        try {
+          finalIdea = await api.organizeIdea(created.id);
+          onToast('已保留原文并由 AI 整理完成');
+        } catch (aiErr) {
+          onToast(
+            `原始灵感已保存，但 AI 整理失败：${aiErr instanceof Error ? aiErr.message : '请检查模型配置'}`,
+            'err'
+          );
+        }
+      } else {
+        onToast('原始灵感已保存');
+      }
       onRefresh();
-      onSelectIdeaId(created.id);
-      setEditing(created);
-      onToast('已创建新灵感卡片');
+      onSelectIdeaId(finalIdea.id);
+      setEditing(finalIdea);
     } catch (e) {
-      onToast(e instanceof Error ? e.message : '创建失败', 'err');
+      onToast(e instanceof Error ? e.message : '保存失败', 'err');
+    } finally {
+      setCreating(null);
     }
   };
 
@@ -99,10 +102,15 @@ export function IdeasView({
     if (!editing) return;
     setSaving(true);
     try {
-      const updated = await api.updateIdea(editing.id, editing);
+      const updated = await api.updateIdea(editing.id, {
+        title: editing.title.trim() || deriveShortTitle(editing.content),
+        content: editing.content,
+        tags: editing.tags,
+        ai_notes: editing.ai_notes,
+      });
       setEditing(updated);
       onRefresh();
-      onToast('游戏灵感已保存');
+      onToast('已保存');
     } catch (e) {
       onToast(e instanceof Error ? e.message : '保存失败', 'err');
     } finally {
@@ -110,58 +118,36 @@ export function IdeasView({
     }
   };
 
+  const handleOrganize = async () => {
+    if (!editing) return;
+    setOrganizing(true);
+    try {
+      // Save latest original text first so AI organizes the current draft
+      await api.updateIdea(editing.id, {
+        title: editing.title.trim() || deriveShortTitle(editing.content),
+        content: editing.content,
+        tags: editing.tags,
+      });
+      const updated = await api.organizeIdea(editing.id);
+      setEditing(updated);
+      onRefresh();
+      onToast('AI 已忠实整理完成（原文已完整保留）');
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : 'AI 整理失败', 'err');
+    } finally {
+      setOrganizing(false);
+    }
+  };
+
   const handleDelete = async (id: string) => {
-    if (!confirm('确定删除这条游戏灵感吗？')) return;
+    if (!confirm('确定删除这条灵感吗？')) return;
     await api.deleteIdea(id);
     if (editing?.id === id) {
       setEditing(null);
       onSelectIdeaId(null);
     }
     onRefresh();
-    onToast('灵感已删除');
-  };
-
-  const handleAiAssist = async (action: 'expand' | 'critique' | 'crosslink') => {
-    if (!editing) return;
-    setAiAction(action);
-    try {
-      await api.updateIdea(editing.id, editing);
-      const res = await api.assistIdea(editing.id, {
-        action,
-        custom_instruction: customAiPrompt.trim() || undefined,
-      });
-      setEditing(res.idea);
-      setCustomAiPrompt('');
-      onRefresh();
-      onToast('AI 陪跑分析已追加到灵感笔记');
-    } catch (e) {
-      onToast(e instanceof Error ? e.message : 'AI 陪跑失败', 'err');
-    } finally {
-      setAiAction(null);
-    }
-  };
-
-  const handleAutoTag = async () => {
-    if (!editing) return;
-    setAiAction('tag');
-    try {
-      const res = await api.autoTag({
-        title: editing.title,
-        content: `${editing.summary}\n${editing.content}`,
-        kind: 'idea',
-      });
-      setEditing({
-        ...editing,
-        tags: Array.from(new Set([...editing.tags, ...res.tags])),
-        summary: editing.summary.trim() ? editing.summary : res.summary,
-        category: CATEGORIES.includes(res.category) ? res.category : editing.category,
-      });
-      onToast('AI 已智能补充标签与概括');
-    } catch (e) {
-      onToast(e instanceof Error ? e.message : 'AI 打标失败', 'err');
-    } finally {
-      setAiAction(null);
-    }
+    onToast('已删除');
   };
 
   const addTag = () => {
@@ -174,144 +160,136 @@ export function IdeasView({
   };
 
   return (
-    <div className="lg:h-full flex flex-col gap-4 max-w-7xl mx-auto min-w-0">
-      {/* Header & Filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            <Gamepad2 className="w-5 h-5 text-amber-400" /> 游戏灵感库
-          </h1>
-          <p className="text-xs text-muted mt-0.5">
-            捕获碎片闪念，借助 AI 主策划一键扩写机制、犀利挑刺、碰撞历史脑洞
-          </p>
-        </div>
-        <button
-          onClick={handleNewIdea}
-          className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-sm font-semibold transition shadow-sm shadow-amber-500/20"
-        >
-          <Plus className="w-4 h-4" /> 捕获新灵感
-        </button>
+    <div className="lg:h-full flex flex-col gap-4 max-w-6xl mx-auto min-w-0">
+      {/* Minimal Header */}
+      <div>
+        <h1 className="text-xl font-bold flex items-center gap-2">
+          <Gamepad2 className="w-5 h-5 text-amber-400" /> 游戏灵感
+        </h1>
+        <p className="text-xs text-muted mt-0.5">
+          随手写下你的原始想法，AI 帮你梳理条理、提炼标题与标签，原汁原味保留原文不添油加醋
+        </p>
       </div>
 
-      {/* Filter Bar */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-[180px] max-w-xs">
-          <Search className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索灵感、标签..."
-            className="w-full pl-9 pr-3 py-1.5 rounded-xl surface text-xs focus:outline-none focus:border-amber-400"
-          />
-        </div>
-
-        <div className="flex items-center gap-1 overflow-x-auto">
-          {(['all', 'spark', 'developing', 'prototype', 'archived'] as const).map((st) => (
+      {/* Ultra-Simple Quick Capture Box (hidden on mobile while viewing detail) */}
+      <div className={`surface rounded-2xl p-3.5 sm:p-4 space-y-3 ${editing ? 'hidden lg:block' : 'block'}`}>
+        <textarea
+          rows={3}
+          value={quickDraft}
+          onChange={(e) => setQuickDraft(e.target.value)}
+          placeholder="随手写一段你的游戏灵感（想到什么写什么，不用起标题也不用管格式）..."
+          className="w-full bg-transparent text-sm leading-relaxed placeholder:text-muted focus:outline-none resize-none"
+        />
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-subtle flex-wrap">
+          <span className="text-[11px] text-muted">
+            原文永久保留，AI 整理仅做结构化梳理
+          </span>
+          <div className="flex items-center gap-2 ml-auto">
             <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition ${
-                statusFilter === st
-                  ? 'bg-indigo-500 text-white'
-                  : 'surface text-secondary hover:text-primary'
-              }`}
+              onClick={() => handleQuickCreate(false)}
+              disabled={creating !== null || !quickDraft.trim()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl surface-elevated hover:border-strong text-xs font-medium transition disabled:opacity-40"
             >
-              {st === 'all' ? '全部状态' : STATUS_META[st].label}
+              {creating === 'save' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              仅保存原文
             </button>
-          ))}
+            <button
+              onClick={() => handleQuickCreate(true)}
+              disabled={creating !== null || !quickDraft.trim()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-semibold transition disabled:opacity-40"
+            >
+              {creating === 'ai' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              保存并 AI 整理
+            </button>
+          </div>
         </div>
-
-        <select
-          value={catFilter}
-          onChange={(e) => setCatFilter(e.target.value)}
-          className="px-2.5 py-1.5 rounded-lg surface text-xs text-secondary focus:outline-none"
-        >
-          <option value="all" className="bg-[#141720]">
-            全部分类
-          </option>
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c} className="bg-[#141720]">
-              {c}
-            </option>
-          ))}
-        </select>
       </div>
 
-      {/* Main Split View */}
+      {/* Main Split View: Clean List + Clean Detail */}
       <div className="flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:flex-1 lg:min-h-0">
         {/* Idea List */}
         <div
-          className={`lg:col-span-4 space-y-2.5 lg:overflow-y-auto lg:pr-1 ${
-            editing ? 'hidden lg:block' : 'block'
+          className={`lg:col-span-5 flex flex-col gap-2.5 lg:min-h-0 ${
+            editing ? 'hidden lg:flex' : 'flex'
           }`}
         >
-          {filtered.length === 0 ? (
-            <div className="surface rounded-2xl p-8 text-center text-sm text-muted">
-              暂无符合条件的灵感卡片
-            </div>
-          ) : (
-            filtered.map((idea) => {
-              const st = STATUS_META[idea.status] || STATUS_META.spark;
-              const selected = editing?.id === idea.id;
-              return (
-                <button
-                  key={idea.id}
-                  onClick={() => {
-                    setEditing({ ...idea });
-                    onSelectIdeaId(idea.id);
-                  }}
-                  className={`w-full text-left p-4 rounded-2xl border transition ${
-                    selected
-                      ? 'bg-amber-500/10 border-amber-400/40'
-                      : 'surface hover:border-strong'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2 text-[11px]">
-                    <span
-                      className="px-2 py-0.5 rounded-md font-medium"
-                      style={{ backgroundColor: `${st.color}20`, color: st.color }}
-                    >
-                      {st.label}
-                    </span>
-                    <span className="text-muted">{idea.category}</span>
-                  </div>
-                  <div className="font-semibold text-sm mt-2">{idea.title}</div>
-                  {idea.summary && (
-                    <p className="text-xs text-secondary mt-1 line-clamp-2">{idea.summary}</p>
-                  )}
-                  <div className="flex items-center justify-between gap-2 mt-2.5">
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {idea.tags.slice(0, 3).map((t) => (
-                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-secondary">
-                          #{t}
-                        </span>
-                      ))}
-                    </div>
-                    {idea.ai_notes && (
-                      <span className="text-[11px] text-indigo-400 inline-flex items-center gap-0.5 shrink-0">
-                        <Sparkles className="w-3 h-3" /> AI
+          <div className="relative">
+            <Search className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索灵感关键词或标签..."
+              className="w-full pl-9 pr-3 py-2 rounded-xl surface text-xs focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="space-y-2 lg:overflow-y-auto lg:pr-1 flex-1">
+            {filtered.length === 0 ? (
+              <div className="surface rounded-2xl p-8 text-center text-xs text-muted">
+                还没有灵感记录，在上方输入框随手记第一段话吧。
+              </div>
+            ) : (
+              filtered.map((idea) => {
+                const selected = editing?.id === idea.id;
+                return (
+                  <button
+                    key={idea.id}
+                    onClick={() => {
+                      setEditing({ ...idea });
+                      onSelectIdeaId(idea.id);
+                    }}
+                    className={`w-full text-left p-3.5 rounded-2xl border transition ${
+                      selected
+                        ? 'bg-indigo-500/10 border-indigo-500/40'
+                        : 'surface hover:border-strong'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-sm line-clamp-1">{idea.title}</span>
+                      <span className="text-[10px] text-muted shrink-0">
+                        {idea.created_at.slice(5, 10)}
                       </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })
-          )}
+                    </div>
+                    <p className="text-xs text-secondary mt-1.5 line-clamp-2 leading-relaxed">
+                      {idea.content}
+                    </p>
+                    <div className="flex items-center justify-between gap-2 mt-2.5">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {idea.tags.slice(0, 4).map((t) => (
+                          <span
+                            key={t}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-secondary"
+                          >
+                            #{t}
+                          </span>
+                        ))}
+                      </div>
+                      {idea.ai_notes && (
+                        <span className="text-[10px] text-indigo-400 inline-flex items-center gap-0.5 shrink-0">
+                          <Sparkles className="w-3 h-3" /> 已整理
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
 
-        {/* Idea Editor + AI Co-pilot */}
+        {/* Clean Two-Section Detail View: Original + AI Organized */}
         <div
-          className={`lg:col-span-8 flex flex-col min-h-0 ${
+          className={`lg:col-span-7 flex flex-col lg:min-h-0 ${
             editing ? 'flex' : 'hidden lg:flex'
           }`}
         >
           {!editing ? (
             <div className="surface rounded-2xl flex-1 flex flex-col items-center justify-center p-10 text-center text-muted">
-              <LayoutGrid className="w-8 h-8 mb-2 opacity-40" />
-              <p className="text-sm">选择一条游戏灵感进行深化，或点击「捕获新灵感」。</p>
+              <Sparkles className="w-7 h-7 mb-2 opacity-35" />
+              <p className="text-sm">点击左侧任意灵感查看原文与 AI 整理版</p>
             </div>
           ) : (
-            <div className="surface rounded-2xl p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
+            <div className="surface rounded-2xl p-4 sm:p-5 space-y-4 lg:overflow-y-auto flex-1">
               {/* Top Actions */}
               <div className="flex items-center justify-between gap-2 pb-3 border-b border-subtle flex-wrap">
                 <button
@@ -323,29 +301,30 @@ export function IdeasView({
                 >
                   <ArrowLeft className="w-4 h-4" /> 返回列表
                 </button>
-                <div className="flex items-center gap-2 ml-auto flex-wrap">
+                <div className="flex items-center gap-2 ml-auto">
                   <button
-                    onClick={handleAutoTag}
-                    disabled={aiAction !== null}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg surface-elevated hover:border-strong text-xs font-medium disabled:opacity-50"
+                    onClick={handleOrganize}
+                    disabled={organizing}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition disabled:opacity-50"
                   >
-                    {aiAction === 'tag' ? (
+                    {organizing ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
-                      <Tag className="w-3.5 h-3.5 text-sky-400" />
+                      <Sparkles className="w-3.5 h-3.5" />
                     )}
-                    AI 概括打标
+                    {editing.ai_notes ? 'AI 重新整理' : 'AI 忠实整理'}
                   </button>
                   <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-medium"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-medium transition"
                   >
                     {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                     保存
                   </button>
                   <button
                     onClick={() => handleDelete(editing.id)}
+                    title="删除"
                     className="p-1.5 rounded-lg text-muted hover:text-rose-400 hover:bg-rose-500/10"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -353,76 +332,20 @@ export function IdeasView({
                 </div>
               </div>
 
-              {/* Title + Pitch */}
-              <div className="space-y-2">
-                <input
-                  value={editing.title}
-                  onChange={(e) => setEditing({ ...editing, title: e.target.value })}
-                  placeholder="灵感标题..."
-                  className="w-full text-xl font-bold bg-transparent focus:outline-none"
-                />
-                <input
-                  value={editing.summary}
-                  onChange={(e) => setEditing({ ...editing, summary: e.target.value })}
-                  placeholder="一句话 Elevator Pitch：这个点子最抓人的地方是什么？"
-                  className="w-full text-sm text-secondary bg-transparent border-b border-subtle pb-2 focus:outline-none focus:border-amber-400"
-                />
-              </div>
+              {/* Editable Title */}
+              <input
+                value={editing.title}
+                onChange={(e) => setEditing({ ...editing, title: e.target.value })}
+                placeholder="灵感标题..."
+                className="w-full text-lg font-bold bg-transparent focus:outline-none"
+              />
 
-              {/* Meta Row */}
-              <div className="grid grid-cols-3 gap-2.5 text-xs">
-                <label className="surface-elevated rounded-xl px-2.5 py-2 flex flex-col gap-1">
-                  <span className="text-[11px] text-muted">分类</span>
-                  <select
-                    value={editing.category}
-                    onChange={(e) => setEditing({ ...editing, category: e.target.value })}
-                    className="bg-transparent font-medium focus:outline-none"
-                  >
-                    {CATEGORIES.map((c) => (
-                      <option key={c} value={c} className="bg-[#141720]">
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="surface-elevated rounded-xl px-2.5 py-2 flex flex-col gap-1">
-                  <span className="text-[11px] text-muted">孵化阶段</span>
-                  <select
-                    value={editing.status}
-                    onChange={(e) => setEditing({ ...editing, status: e.target.value as IdeaStatus })}
-                    className="bg-transparent font-medium focus:outline-none"
-                  >
-                    {Object.entries(STATUS_META).map(([k, v]) => (
-                      <option key={k} value={k} className="bg-[#141720]">
-                        {v.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="surface-elevated rounded-xl px-2.5 py-2 flex flex-col gap-1">
-                  <span className="text-[11px] text-muted flex items-center gap-1">
-                    <Flame className="w-3 h-3 text-amber-400" /> 优先级
-                  </span>
-                  <select
-                    value={editing.priority}
-                    onChange={(e) => setEditing({ ...editing, priority: Number(e.target.value) })}
-                    className="bg-transparent font-medium focus:outline-none"
-                  >
-                    <option value={3} className="bg-[#141720]">P1 · 极高兴奋度</option>
-                    <option value={2} className="bg-[#141720]">P2 · 值得深化</option>
-                    <option value={1} className="bg-[#141720]">P3 · 备选储备</option>
-                  </select>
-                </label>
-              </div>
-
-              {/* Tags */}
+              {/* Compact Tags */}
               <div className="flex items-center gap-1.5 flex-wrap">
                 {editing.tags.map((tag) => (
                   <span
                     key={tag}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/12 text-amber-300 text-xs"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/12 text-indigo-300 text-xs"
                   >
                     #{tag}
                     <button
@@ -443,75 +366,53 @@ export function IdeasView({
                       addTag();
                     }
                   }}
-                  placeholder="+ 标签回车"
-                  className="text-xs px-2 py-1 rounded-lg bg-transparent border border-subtle focus:outline-none w-24"
+                  placeholder="+ 标签"
+                  className="text-xs px-2 py-0.5 rounded-lg bg-transparent border border-subtle focus:outline-none w-20"
                 />
               </div>
 
-              {/* Markdown Editor */}
-              <MarkdownEditor
-                value={editing.content}
-                onChange={(content) => setEditing({ ...editing, content })}
-                placeholder="记录玩法循环、操作手感、美术氛围、UE5 实现设想..."
-                minHeight="210px"
-              />
-
-              {/* AI Co-pilot Panel */}
-              <div className="rounded-2xl border border-indigo-500/30 bg-indigo-500/[0.05] p-4 space-y-3">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="text-xs font-semibold text-indigo-400 flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4" /> 游戏灵感 AI 主策划陪跑
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <button
-                      disabled={aiAction !== null}
-                      onClick={() => handleAiAssist('expand')}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-medium transition disabled:opacity-50"
-                    >
-                      {aiAction === 'expand' ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Wand2 className="w-3.5 h-3.5" />
-                      )}
-                      扩写玩法与 MVP
-                    </button>
-                    <button
-                      disabled={aiAction !== null}
-                      onClick={() => handleAiAssist('critique')}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/25 text-xs font-medium transition disabled:opacity-50"
-                    >
-                      {aiAction === 'critique' ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Target className="w-3.5 h-3.5" />
-                      )}
-                      犀利挑刺找漏洞
-                    </button>
-                    <button
-                      disabled={aiAction !== null}
-                      onClick={() => handleAiAssist('crosslink')}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/25 text-xs font-medium transition disabled:opacity-50"
-                    >
-                      {aiAction === 'crosslink' ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <GitMerge className="w-3.5 h-3.5" />
-                      )}
-                      碰撞历史灵感
-                    </button>
-                  </div>
+              {/* Section 1: Raw Original Inspiration (NEVER overwritten by AI) */}
+              <div className="rounded-2xl surface-elevated p-3.5 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-amber-400">我的原始灵感</span>
+                  <span className="text-[11px] text-muted">完整保留原文，AI 绝不改写</span>
                 </div>
-
-                <input
-                  value={customAiPrompt}
-                  onChange={(e) => setCustomAiPrompt(e.target.value)}
-                  placeholder="可选补充要求，例如：偏向魂类节奏、控制在单人 UE5 两周可做完的体量..."
-                  className="w-full px-3 py-2 rounded-xl bg-[var(--bg-surface)] border border-subtle text-xs focus:outline-none focus:border-indigo-500"
+                <textarea
+                  rows={5}
+                  value={editing.content}
+                  onChange={(e) => setEditing({ ...editing, content: e.target.value })}
+                  placeholder="在这里写下你的原始想法..."
+                  className="w-full bg-transparent text-sm leading-relaxed text-primary focus:outline-none resize-y"
                 />
+              </div>
 
-                {editing.ai_notes && (
-                  <div className="pt-3 border-t border-subtle max-h-[420px] overflow-y-auto pr-1">
-                    <MarkdownView content={editing.ai_notes} />
+              {/* Section 2: Faithful AI Organized Version */}
+              <div className="rounded-2xl border border-indigo-500/25 bg-indigo-500/[0.04] p-4 space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-indigo-400 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" /> AI 整理版
+                  </span>
+                  <span className="text-[11px] text-muted">仅梳理结构，不添油加醋</span>
+                </div>
+                {editing.ai_notes ? (
+                  <MarkdownView content={editing.ai_notes} />
+                ) : (
+                  <div className="py-4 text-center space-y-2">
+                    <p className="text-xs text-muted">
+                      还没有整理，点击按钮让 AI 把上面的原文梳理成清晰要点。
+                    </p>
+                    <button
+                      onClick={handleOrganize}
+                      disabled={organizing}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-medium transition disabled:opacity-50"
+                    >
+                      {organizing ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3.5 h-3.5" />
+                      )}
+                      AI 整理这段灵感
+                    </button>
                   </div>
                 )}
               </div>

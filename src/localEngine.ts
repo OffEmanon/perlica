@@ -111,6 +111,20 @@ function defaultPrompts(): PromptTemplate[] {
       updated_at: now,
     },
     {
+      id: 'tpl_organize',
+      key: 'idea_organize',
+      name: '游戏灵感忠实整理（不添油加醋）',
+      description: '仅按原文梳理结构、提炼标题与标签，严禁自行脑补扩写。',
+      system_prompt: `你是一位克制、严谨的灵感整理助手。用户会发给你一段口语化或碎片化的原始游戏灵感。
+你的唯一任务是帮用户把这段原文整理得条理清晰、方便日后查阅，必须严格遵守以下规则：
+1. 【严禁添油加醋】绝对不要自行发明、扩写、猜测或脑补原文里没有提到的玩法、剧情、数值、美术或系统！
+2. 【完整保留原意】原文里的每一个有效点子、比喻、条件、限制和关键词都必须保留，不得遗漏或篡改含义。
+3. 【只做结构化梳理】提炼一个简短准确的标题（15字以内），2~4个精准标签，并把原文按逻辑自然分条整理成清晰的 Markdown（原文很短就简洁分条，不要硬凑空洞大纲）。
+4. 仅返回合法 JSON 对象（不要用 \`\`\`json 包裹），格式严格为：
+{"title": "简短标题", "tags": ["标签1", "标签2"], "organized": "忠实原文整理后的 Markdown 文本"}`,
+      updated_at: now,
+    },
+    {
       id: 'tpl_expand',
       key: 'idea_expand',
       name: '游戏灵感机制扩写',
@@ -195,11 +209,16 @@ function loadState(): LocalDbState {
     }
     const parsed = JSON.parse(raw) as Partial<LocalDbState>;
     const base = emptyState();
+    const mergedPrompts = parsed.prompt_templates?.length ? [...parsed.prompt_templates] : base.prompt_templates;
+    if (!mergedPrompts.some((t) => t.key === 'idea_organize')) {
+      const orgTpl = base.prompt_templates.find((t) => t.key === 'idea_organize');
+      if (orgTpl) mergedPrompts.unshift(orgTpl);
+    }
     return {
       ...base,
       ...parsed,
       ai_providers: parsed.ai_providers?.length ? parsed.ai_providers : base.ai_providers,
-      prompt_templates: parsed.prompt_templates?.length ? parsed.prompt_templates : base.prompt_templates,
+      prompt_templates: mergedPrompts,
       github: { ...base.github, ...(parsed.github || {}) },
     };
   } catch {
@@ -1214,6 +1233,61 @@ export const localEngine = {
     saveState(st);
     scheduleAutoSync();
     return st.study_logs[idx];
+  },
+
+  organizeIdea: async (id: string, provider_id?: string): Promise<GameIdea> => {
+    const st = loadState();
+    const idx = st.game_ideas.findIndex((i) => i.id === id);
+    if (idx < 0) throw new Error('灵感不存在');
+    const idea = st.game_ideas[idx];
+    const rawText = (idea.content || idea.title || '').trim();
+    if (!rawText) throw new Error('请先写下你的原始灵感内容');
+
+    const provider = getProvider(st, provider_id);
+    const tpl = st.prompt_templates.find((t) => t.key === 'idea_organize');
+    const raw = await callBrowserLlm(
+      provider,
+      [
+        {
+          role: 'system',
+          content:
+            tpl?.system_prompt ||
+            '请忠实整理用户的原始灵感，严禁添油加醋，仅返回 JSON: {"title":"","tags":[],"organized":""}',
+        },
+        { role: 'user', content: `请忠实整理以下原始灵感（严禁脑补未提及的设定）：\n\n${rawText}` },
+      ],
+      { temperature: 0.25 }
+    );
+
+    let nextTitle = idea.title;
+    let nextTags = idea.tags;
+    let organized = raw.trim();
+
+    try {
+      const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(match ? match[0] : cleaned) as {
+        title?: string;
+        tags?: string[];
+        organized?: string;
+      };
+      if (parsed.title?.trim()) nextTitle = parsed.title.trim().slice(0, 40);
+      if (Array.isArray(parsed.tags) && parsed.tags.length > 0) {
+        nextTags = Array.from(new Set(parsed.tags.slice(0, 5).map((t) => String(t).trim()).filter(Boolean)));
+      }
+      if (parsed.organized?.trim()) organized = parsed.organized.trim();
+    } catch {
+      // keep raw markdown fallback
+    }
+
+    // Preserve idea.content (original text) untouched!
+    idea.title = nextTitle;
+    idea.tags = nextTags;
+    idea.ai_notes = organized;
+    idea.updated_at = new Date().toISOString();
+    saveState(st);
+    scheduleAutoSync();
+    return idea;
   },
 
   assistIdea: async (

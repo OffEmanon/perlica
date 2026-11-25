@@ -160,7 +160,26 @@ export function initDb(): void {
   `);
 
   ensureDefaultAiConfig();
+  ensureIdeaOrganizePrompt();
   ensureSessionSecret();
+}
+
+const IDEA_ORGANIZE_PROMPT = `你是一位克制、严谨的灵感整理助手。用户会发给你一段口语化或碎片化的原始游戏灵感。
+你的唯一任务是帮用户把这段原文整理得条理清晰、方便日后查阅，必须严格遵守以下规则：
+1. 【严禁添油加醋】绝对不要自行发明、扩写、猜测或脑补原文里没有提到的玩法、剧情、数值、美术或系统！
+2. 【完整保留原意】原文里的每一个有效点子、比喻、条件、限制和关键词都必须保留，不得遗漏或篡改含义。
+3. 【只做结构化梳理】提炼一个简短准确的标题（15字以内），2~4个精准标签，并把原文按逻辑自然分条整理成清晰的 Markdown（原文很短就简洁分条，不要硬凑空洞大纲）。
+4. 仅返回合法 JSON 对象（不要用 \`\`\`json 包裹），格式严格为：
+{"title": "简短标题", "tags": ["标签1", "标签2"], "organized": "忠实原文整理后的 Markdown 文本"}`;
+
+function ensureIdeaOrganizePrompt(): void {
+  const exists = db.prepare("SELECT id FROM prompt_templates WHERE key = 'idea_organize'").get();
+  if (!exists) {
+    db.prepare(
+      `INSERT INTO prompt_templates (id, key, name, description, system_prompt, updated_at)
+       VALUES (?, 'idea_organize', '游戏灵感忠实整理（不添油加醋）', '仅按原文梳理结构、提炼标题与标签，严禁自行脑补扩写。', ?, ?)`
+    ).run(uid('tpl'), IDEA_ORGANIZE_PROMPT, new Date().toISOString());
+  }
 }
 
 export function getSetting(key: string): string | null {
