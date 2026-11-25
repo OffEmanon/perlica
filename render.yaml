@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: perlica
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /app/data
+      - key: PERLICA_PASSWORD
+        sync: false
+    disk:
+      name: perlica-data
+      mountPath: /app/data
+      sizeGB: 1
