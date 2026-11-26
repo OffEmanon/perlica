@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
-  BookOpen,
   Calendar,
   Loader2,
   Save,
@@ -40,12 +39,10 @@ export function StudyView({
   onRefresh,
   onToast,
 }: StudyViewProps) {
-  // Ultra-simple daily write composer
   const [quickDraft, setQuickDraft] = useState('');
   const [draftDate, setDraftDate] = useState(todayDateString());
   const [creating, setCreating] = useState<'save' | 'ai' | null>(null);
 
-  // List & detail state
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<StudyLog | null>(null);
   const [isDirty, setIsDirty] = useState(false);
@@ -54,7 +51,6 @@ export function StudyView({
   const [newTag, setNewTag] = useState('');
 
   const moduleMap = new Map(modules.map((m) => [m.id, m]));
-  // Only show auto-generated categories that actually contain logs
   const visibleCategories = modules.filter((m) => (m.log_count ?? 0) > 0);
 
   const updateEditing = (next: StudyLog) => {
@@ -62,15 +58,11 @@ export function StudyView({
     setIsDirty(true);
   };
 
-  // Reset filter to 'all' if selected category no longer has logs
   useEffect(() => {
     if (
       activeModuleId !== 'all' &&
-      visibleCategories.length > 0 &&
       !visibleCategories.some((c) => c.id === activeModuleId)
     ) {
-      onSelectModule('all');
-    } else if (activeModuleId !== 'all' && visibleCategories.length === 0) {
       onSelectModule('all');
     }
   }, [activeModuleId, visibleCategories, onSelectModule]);
@@ -127,15 +119,15 @@ export function StudyView({
       if (withAi) {
         try {
           finalLog = await api.organizeLog(created.id);
-          onToast('已保留原文，AI 自动分类并整理完成');
+          onToast('已自动分类并整理');
         } catch (aiErr) {
           onToast(
-            `原始记录已保存，但 AI 分类整理失败：${aiErr instanceof Error ? aiErr.message : '请检查模型配置'}`,
+            `原文已保存，整理失败：${aiErr instanceof Error ? aiErr.message : '请检查模型配置'}`,
             'err'
           );
         }
       } else {
-        onToast('原始记录已保存');
+        onToast('已保存');
       }
       onRefresh();
       onSelectLogId(finalLog.id);
@@ -186,9 +178,9 @@ export function StudyView({
       setEditing(updated);
       setIsDirty(false);
       onRefresh();
-      onToast('AI 自动分类与整理完成（原文已保留）');
+      onToast('整理完成');
     } catch (e) {
-      onToast(e instanceof Error ? e.message : 'AI 整理失败', 'err');
+      onToast(e instanceof Error ? e.message : '整理失败', 'err');
     } finally {
       setOrganizing(false);
     }
@@ -218,105 +210,90 @@ export function StudyView({
   const editingCategory = editing ? moduleMap.get(editing.module_id) : null;
 
   return (
-    <div className="lg:h-full flex flex-col gap-4 max-w-6xl mx-auto min-w-0">
-      {/* Minimal Header */}
-      <div>
-        <h1 className="text-xl font-bold flex items-center gap-2">
-          <BookOpen className="w-5 h-5 text-indigo-400" /> 学习日志
-        </h1>
-        <p className="text-xs text-muted mt-0.5">
-          直接写下今天学了什么，AI 自动为你分类、整理归纳要点与标签，原汁原味保留原始记录
-        </p>
-      </div>
+    <div className="lg:h-full flex flex-col gap-4 max-w-5xl mx-auto min-w-0">
+      <h1 className="text-xl font-semibold tracking-tight">学习日志</h1>
 
-      {/* Zero-Setup Daily Write Box (always ready to type; hidden on mobile while viewing detail) */}
-      <div className={`surface rounded-2xl p-3.5 sm:p-4 space-y-3 ${editing ? 'hidden lg:block' : 'block'}`}>
+      {/* Flat Daily Composer */}
+      <div className={`surface rounded-xl p-4 space-y-3 ${editing ? 'hidden lg:block' : 'block'}`}>
         <textarea
           rows={3}
           value={quickDraft}
           onChange={(e) => setQuickDraft(e.target.value)}
-          placeholder="今天学了什么？随手写下学到的知识点、公式、代码或踩过的坑（不用选分类、不用起标题，AI 会自动帮你归类整理）..."
+          placeholder="写下今天学了什么..."
           className="w-full bg-transparent text-sm leading-relaxed placeholder:text-muted focus:outline-none resize-none"
         />
 
-        <div className="flex items-center justify-between gap-2 pt-2 border-t border-subtle flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap">
-            <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg surface-elevated text-xs text-secondary shrink-0">
-              <Calendar className="w-3.5 h-3.5 text-muted" />
-              <input
-                type="date"
-                value={draftDate}
-                onChange={(e) => setDraftDate(e.target.value)}
-                className="bg-transparent text-primary focus:outline-none text-xs"
-              />
-            </label>
-            <span className="text-[11px] text-muted hidden sm:inline">
-              AI 根据内容自动分类并整理（支持 LaTeX 与代码高亮）
-            </span>
-          </div>
+        <div className="flex items-center justify-between gap-2 pt-3 border-t border-subtle flex-wrap">
+          <label className="inline-flex items-center gap-1.5 text-xs text-secondary">
+            <Calendar className="w-3.5 h-3.5 text-muted" />
+            <input
+              type="date"
+              value={draftDate}
+              onChange={(e) => setDraftDate(e.target.value)}
+              className="bg-transparent text-secondary focus:outline-none text-xs"
+            />
+          </label>
 
           <div className="flex items-center gap-2 ml-auto">
             <button
               onClick={() => handleQuickCreate(false)}
               disabled={creating !== null || !quickDraft.trim()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl surface-elevated hover:border-strong text-xs font-medium transition disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg surface-elevated hover:border-strong text-xs font-medium text-secondary hover:text-primary transition-colors duration-100 disabled:opacity-40"
             >
-              {creating === 'save' ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Save className="w-3.5 h-3.5" />
-              )}
-              仅保存原文
+              {creating === 'save' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              保存
             </button>
             <button
               onClick={() => handleQuickCreate(true)}
               disabled={creating !== null || !quickDraft.trim()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-semibold transition disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg btn-primary text-xs font-medium transition-colors duration-100 disabled:opacity-40"
             >
               {creating === 'ai' ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <Sparkles className="w-3.5 h-3.5" />
               )}
-              保存并 AI 自动分类整理
+              保存并整理
             </button>
           </div>
         </div>
       </div>
 
-      {/* Auto-Generated Category Filter Strip (appears automatically once logs exist) */}
+      {/* Auto-Category Filter Row */}
       {visibleCategories.length > 0 && (
-        <div className={`flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full ${editing ? 'hidden lg:flex' : 'flex'}`}>
+        <div className={`flex items-center gap-1.5 overflow-x-auto pb-0.5 max-w-full ${editing ? 'hidden lg:flex' : 'flex'}`}>
           <button
             onClick={() => onSelectModule('all')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition shrink-0 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors duration-100 shrink-0 ${
               activeModuleId === 'all'
-                ? 'bg-indigo-500 text-white'
+                ? 'btn-primary'
                 : 'surface text-secondary hover:text-primary'
             }`}
           >
-            全部 ({logs.length})
+            全部 {logs.length}
           </button>
-          {visibleCategories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => onSelectModule(cat.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition flex items-center gap-1.5 border shrink-0 ${
-                activeModuleId === cat.id
-                  ? 'text-white border-transparent'
-                  : 'surface text-secondary hover:text-primary'
-              }`}
-              style={activeModuleId === cat.id ? { backgroundColor: cat.color } : undefined}
-            >
-              <span>{cat.icon}</span>
-              <span>{cat.name}</span>
-              <span className="opacity-70 text-[11px]">({cat.log_count ?? 0})</span>
-            </button>
-          ))}
+          {visibleCategories.map((cat) => {
+            const active = activeModuleId === cat.id;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => onSelectModule(cat.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors duration-100 flex items-center gap-1.5 shrink-0 ${
+                  active
+                    ? 'btn-primary'
+                    : 'surface text-secondary hover:text-primary'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                <span>{cat.name}</span>
+                <span className="opacity-65 tabular-nums">{cat.log_count ?? 0}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {/* Main Split View: Clean List + Clean Two-Section Detail */}
+      {/* Main Split View */}
       <div className="flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:flex-1 lg:min-h-0">
         {/* Log List */}
         <div
@@ -329,15 +306,15 @@ export function StudyView({
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索学习记录、分类、AI归纳或标签..."
-              className="w-full pl-9 pr-3 py-2 rounded-xl surface text-xs focus:outline-none focus:border-indigo-500"
+              placeholder="搜索记录..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg surface text-sm focus:outline-none focus:border-strong"
             />
           </div>
 
           <div className="space-y-2 lg:overflow-y-auto lg:pr-1 flex-1">
             {filteredLogs.length === 0 ? (
-              <div className="surface rounded-2xl p-8 text-center text-xs text-muted">
-                还没有学习记录，在上方输入框随手写下今天学了什么吧。
+              <div className="surface rounded-xl p-8 text-center text-sm text-muted">
+                暂无学习记录
               </div>
             ) : (
               filteredLogs.map((log) => {
@@ -351,27 +328,25 @@ export function StudyView({
                       setIsDirty(false);
                       onSelectLogId(log.id);
                     }}
-                    className={`w-full text-left p-3.5 rounded-2xl border transition ${
+                    className={`w-full text-left p-3.5 rounded-xl border transition-colors duration-100 ${
                       selected
-                        ? 'bg-indigo-500/10 border-indigo-500/40'
+                        ? 'bg-[var(--bg-elevated)] border-strong'
                         : 'surface hover:border-strong'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2 text-[11px] text-muted">
-                      <span>
-                        {cat && (
-                          <span
-                            className="px-1.5 py-0.5 rounded font-medium"
-                            style={{ backgroundColor: `${cat.color}20`, color: cat.color }}
-                          >
-                            {cat.icon} {cat.name}
-                          </span>
-                        )}
-                      </span>
-                      <span className="shrink-0">{log.log_date}</span>
+                    <div className="flex items-center justify-between gap-2 text-xs text-muted">
+                      {cat ? (
+                        <span className="inline-flex items-center gap-1.5 text-secondary">
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color }} />
+                          {cat.name}
+                        </span>
+                      ) : (
+                        <span />
+                      )}
+                      <span className="tabular-nums shrink-0">{log.log_date}</span>
                     </div>
 
-                    <div className="font-semibold text-sm mt-1.5 line-clamp-1">{log.title}</div>
+                    <div className="font-medium text-sm mt-1.5 line-clamp-1">{log.title}</div>
 
                     {log.content && (
                       <p className="text-xs text-secondary mt-1 line-clamp-2 leading-relaxed">
@@ -379,23 +354,18 @@ export function StudyView({
                       </p>
                     )}
 
-                    <div className="flex items-center justify-between gap-2 mt-2.5">
-                      <div className="flex items-center gap-1 flex-wrap">
+                    {log.tags.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap mt-2">
                         {log.tags.slice(0, 4).map((t) => (
                           <span
                             key={t}
-                            className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-secondary"
+                            className="text-xs px-1.5 py-0.5 rounded-md bg-[var(--bg-elevated)] text-muted"
                           >
                             #{t}
                           </span>
                         ))}
                       </div>
-                      {log.ai_feedback && (
-                        <span className="text-[10px] text-indigo-400 inline-flex items-center gap-0.5 shrink-0">
-                          <Sparkles className="w-3 h-3" /> 已整理
-                        </span>
-                      )}
-                    </div>
+                    )}
                   </button>
                 );
               })
@@ -403,21 +373,20 @@ export function StudyView({
           </div>
         </div>
 
-        {/* Clean Two-Section Detail View: Original + AI Organized */}
+        {/* Flat Single-Layer Detail View (whitespace + hairline dividers, zero nested cards) */}
         <div
           className={`lg:col-span-7 flex flex-col lg:min-h-0 ${
             editing ? 'flex' : 'hidden lg:flex'
           }`}
         >
           {!editing ? (
-            <div className="surface rounded-2xl flex-1 flex flex-col items-center justify-center p-10 text-center text-muted">
-              <Sparkles className="w-7 h-7 mb-2 opacity-35" />
-              <p className="text-sm">点击左侧任意记录查看原始笔记与 AI 整理归纳</p>
+            <div className="surface rounded-xl flex-1 flex items-center justify-center p-10 text-sm text-muted">
+              选择左侧记录查看详情
             </div>
           ) : (
-            <div className="surface rounded-2xl p-4 sm:p-5 space-y-4 lg:overflow-y-auto flex-1">
-              {/* Top Actions */}
-              <div className="flex items-center justify-between gap-2 pb-3 border-b border-subtle flex-wrap">
+            <div className="surface rounded-xl p-5 space-y-5 lg:overflow-y-auto flex-1">
+              {/* Action Bar */}
+              <div className="flex items-center justify-between gap-2 pb-3 border-b border-subtle">
                 <button
                   onClick={() => {
                     setEditing(null);
@@ -426,25 +395,25 @@ export function StudyView({
                   }}
                   className="lg:hidden inline-flex items-center gap-1 text-xs text-secondary hover:text-primary"
                 >
-                  <ArrowLeft className="w-4 h-4" /> 返回列表
+                  <ArrowLeft className="w-4 h-4" /> 返回
                 </button>
                 <div className="flex items-center gap-2 ml-auto">
                   <button
                     onClick={handleOrganize}
                     disabled={organizing}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg surface-elevated hover:border-strong text-xs font-medium text-secondary hover:text-primary transition-colors duration-100 disabled:opacity-40"
                   >
                     {organizing ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
                       <Sparkles className="w-3.5 h-3.5" />
                     )}
-                    {editing.ai_feedback ? 'AI 重新分类整理' : 'AI 自动分类整理'}
+                    {editing.ai_feedback ? '重新整理' : 'AI 整理'}
                   </button>
                   <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-medium transition"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg btn-primary text-xs font-medium transition-colors duration-100"
                   >
                     {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                     保存
@@ -452,126 +421,112 @@ export function StudyView({
                   <button
                     onClick={() => handleDelete(editing.id)}
                     title="删除"
-                    className="p-1.5 rounded-lg text-muted hover:text-rose-400 hover:bg-rose-500/10"
+                    className="p-1.5 rounded-lg text-muted hover:text-rose-500 transition-colors duration-100"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
-              {/* Editable Title */}
-              <input
-                value={editing.title}
-                onChange={(e) => updateEditing({ ...editing, title: e.target.value })}
-                placeholder="学习主题..."
-                className="w-full text-lg font-bold bg-transparent focus:outline-none"
-              />
+              {/* Title & Meta */}
+              <div className="space-y-3">
+                <input
+                  value={editing.title}
+                  onChange={(e) => updateEditing({ ...editing, title: e.target.value })}
+                  placeholder="标题"
+                  className="w-full text-base font-semibold bg-transparent focus:outline-none"
+                />
 
-              {/* Compact Inline Meta: Auto Category + Date + Tags */}
-              <div className="flex items-center gap-2 flex-wrap text-xs">
-                {visibleCategories.length > 1 ? (
-                  <select
-                    value={editing.module_id}
-                    onChange={(e) => updateEditing({ ...editing, module_id: e.target.value })}
-                    title="AI 自动分类（可微调）"
-                    className="px-2.5 py-1 rounded-lg surface-elevated text-primary font-medium focus:outline-none"
-                  >
-                    {visibleCategories.map((c) => (
-                      <option key={c.id} value={c.id} className="bg-[#141720] text-white">
-                        {c.icon} {c.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  editingCategory && (
+                <div className="flex items-center gap-2 flex-wrap text-xs">
+                  {visibleCategories.length > 1 ? (
+                    <select
+                      value={editing.module_id}
+                      onChange={(e) => updateEditing({ ...editing, module_id: e.target.value })}
+                      className="px-2 py-1 rounded-md surface-elevated text-secondary focus:outline-none"
+                    >
+                      {visibleCategories.map((c) => (
+                        <option key={c.id} value={c.id} className="bg-[var(--bg-surface)] text-[var(--text-primary)]">
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    editingCategory && (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--bg-elevated)] text-secondary">
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: editingCategory.color }} />
+                        {editingCategory.name}
+                      </span>
+                    )
+                  )}
+
+                  <input
+                    type="date"
+                    value={editing.log_date}
+                    onChange={(e) => updateEditing({ ...editing, log_date: e.target.value })}
+                    className="px-2 py-1 rounded-md surface-elevated text-secondary focus:outline-none tabular-nums"
+                  />
+
+                  {editing.tags.map((tag) => (
                     <span
-                      className="px-2.5 py-1 rounded-lg font-medium"
-                      style={{ backgroundColor: `${editingCategory.color}20`, color: editingCategory.color }}
+                      key={tag}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[var(--bg-elevated)] text-secondary"
                     >
-                      {editingCategory.icon} {editingCategory.name}
+                      #{tag}
+                      <button
+                        onClick={() =>
+                          updateEditing({ ...editing, tags: editing.tags.filter((t) => t !== tag) })
+                        }
+                        className="text-muted hover:text-primary"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
                     </span>
-                  )
-                )}
-
-                <input
-                  type="date"
-                  value={editing.log_date}
-                  onChange={(e) => updateEditing({ ...editing, log_date: e.target.value })}
-                  className="px-2.5 py-1 rounded-lg surface-elevated text-secondary focus:outline-none"
-                />
-
-                {editing.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/12 text-indigo-300 text-xs"
-                  >
-                    #{tag}
-                    <button
-                      onClick={() =>
-                        updateEditing({ ...editing, tags: editing.tags.filter((t) => t !== tag) })
+                  ))}
+                  <input
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addTag();
                       }
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-                <input
-                  value={newTag}
-                  onChange={(e) => setNewTag(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addTag();
-                    }
-                  }}
-                  placeholder="+ 标签"
-                  className="text-xs px-2 py-0.5 rounded-lg bg-transparent border border-subtle focus:outline-none w-20"
-                />
+                    }}
+                    placeholder="+ 标签"
+                    className="text-xs px-2 py-0.5 rounded-md bg-transparent border border-subtle focus:outline-none focus:border-strong w-20"
+                  />
+                </div>
               </div>
 
-              {/* Section 1: Raw Daily Study Note (NEVER overwritten by AI) */}
-              <div className="rounded-2xl surface-elevated p-3.5 space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-sky-400">我的原始记录</span>
-                  <span className="text-[11px] text-muted">完整保留原文，AI 绝不覆盖</span>
-                </div>
+              {/* Section 1: Raw Original Note (flat, no nested card) */}
+              <div className="pt-4 border-t border-subtle space-y-2">
+                <div className="text-xs font-medium text-muted">原文</div>
                 <textarea
-                  rows={5}
+                  rows={4}
                   value={editing.content}
                   onChange={(e) => updateEditing({ ...editing, content: e.target.value })}
-                  placeholder="在这里写下你今天学了什么..."
+                  placeholder="写下今天学了什么..."
                   className="w-full bg-transparent text-sm leading-relaxed text-primary focus:outline-none resize-y"
                 />
               </div>
 
-              {/* Section 2: AI Organized Study Summary */}
-              <div className="rounded-2xl border border-indigo-500/25 bg-indigo-500/[0.04] p-4 space-y-2.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-indigo-400 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5" /> AI 整理归纳
-                  </span>
-                  <span className="text-[11px] text-muted">自动分类 · 忠于原文 · 支持公式与代码高亮</span>
-                </div>
+              {/* Section 2: AI Organized Notes (flat, no nested card) */}
+              <div className="pt-4 border-t border-subtle space-y-3">
+                <div className="text-xs font-medium text-muted">整理</div>
                 {editing.ai_feedback ? (
                   <MarkdownView content={editing.ai_feedback} />
                 ) : (
-                  <div className="py-4 text-center space-y-2">
-                    <p className="text-xs text-muted">
-                      还没有整理，点击按钮让 AI 自动分类并归纳成清晰的复习笔记。
-                    </p>
-                    <button
-                      onClick={handleOrganize}
-                      disabled={organizing}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-medium transition disabled:opacity-50"
-                    >
-                      {organizing ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Sparkles className="w-3.5 h-3.5" />
-                      )}
-                      AI 自动分类并整理
-                    </button>
-                  </div>
+                  <button
+                    onClick={handleOrganize}
+                    disabled={organizing}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg surface-elevated hover:border-strong text-xs font-medium text-secondary hover:text-primary disabled:opacity-40"
+                  >
+                    {organizing ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    )}
+                    AI 整理
+                  </button>
                 )}
               </div>
             </div>

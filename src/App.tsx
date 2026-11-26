@@ -77,7 +77,7 @@ export default function App() {
     setToast({ msg, type });
     setTimeout(() => {
       setToast((cur) => (cur?.msg === msg ? null : cur));
-    }, 3400);
+    }, 3200);
   }, []);
 
   useEffect(() => {
@@ -142,7 +142,7 @@ export default function App() {
         lastAutoSyncRef.current = Date.now();
         await refreshAll();
       } catch {
-        // silent background failure; status shows in Settings
+        // silent background failure
       } finally {
         autoSyncBusyRef.current = false;
         setSyncingQuick(false);
@@ -233,7 +233,7 @@ export default function App() {
     try {
       await api.syncGithubNow();
       await refreshAll();
-      showToast('GitHub 双端同步完成');
+      showToast('已同步');
     } catch (e) {
       showToast(e instanceof Error ? e.message : '同步失败', 'err');
     } finally {
@@ -261,12 +261,12 @@ export default function App() {
         if (autoOrganize) {
           try {
             finalIdea = await api.organizeIdea(created.id);
-            showToast('灵感原文已保留，AI 整理完成');
+            showToast('已保存并整理');
           } catch (aiErr) {
-            showToast(`原文已保存，AI 整理失败：${aiErr instanceof Error ? aiErr.message : ''}`, 'err');
+            showToast(`原文已保存，整理失败：${aiErr instanceof Error ? aiErr.message : ''}`, 'err');
           }
         } else {
-          showToast('游戏灵感已保存');
+          showToast('已保存');
         }
         setSelectedIdeaId(finalIdea.id);
         setTab('ideas');
@@ -294,12 +294,12 @@ export default function App() {
       if (autoOrganize) {
         try {
           finalLog = await api.organizeLog(created.id);
-          showToast('学习记录已保留原文，AI 自动分类整理完成');
+          showToast('已自动分类并整理');
         } catch (aiErr) {
-          showToast(`原文已保存，AI 整理失败：${aiErr instanceof Error ? aiErr.message : ''}`, 'err');
+          showToast(`原文已保存，整理失败：${aiErr instanceof Error ? aiErr.message : ''}`, 'err');
         }
       } else {
-        showToast('学习记录已保存');
+        showToast('已保存');
       }
       setActiveModuleId('all');
       setSelectedLogId(finalLog.id);
@@ -314,50 +314,38 @@ export default function App() {
     }
   };
 
-  // Loading auth check
   if (!authStatus) {
     return (
       <div className="h-screen flex items-center justify-center bg-[var(--bg-app)]">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
+        <Loader2 className="w-5 h-5 animate-spin text-muted" />
       </div>
     );
   }
 
-  // Lock screen when password is enabled and unauthenticated
   if (authStatus.enabled && !authStatus.authenticated) {
     return (
       <div className="h-screen flex items-center justify-center bg-[var(--bg-app)] p-4">
-        <form
-          onSubmit={handleLogin}
-          className="surface rounded-3xl w-full max-w-sm p-7 space-y-5 shadow-2xl text-center"
-        >
-          <img
-            src="./icon.png"
-            alt="Perlica"
-            className="w-20 h-20 mx-auto rounded-2xl object-contain shadow-md"
-          />
-          <div>
-            <h1 className="text-xl font-bold">Perlica</h1>
-            <p className="text-xs text-muted mt-1">请输入访问密码以解锁你的学习与灵感工作台</p>
-          </div>
+        <form onSubmit={handleLogin} className="surface rounded-xl w-full max-w-sm p-6 space-y-5 text-center">
+          <img src="./icon.png" alt="Perlica" className="w-16 h-16 mx-auto rounded-lg object-contain" />
+          <h1 className="text-xl font-semibold">Perlica</h1>
           <div className="space-y-2 text-left">
             <input
               autoFocus
               type="password"
               value={loginPwd}
               onChange={(e) => setLoginPwd(e.target.value)}
-              placeholder="输入访问密码..."
-              className="w-full px-4 py-2.5 rounded-xl surface-elevated text-sm focus:outline-none focus:border-indigo-500"
+              placeholder="输入访问密码"
+              className="w-full px-3 py-2 rounded-lg surface-elevated text-sm focus:outline-none focus:border-strong"
             />
-            {loginErr && <p className="text-xs text-rose-400">{loginErr}</p>}
+            {loginErr && <p className="text-xs text-rose-500">{loginErr}</p>}
           </div>
           <button
             type="submit"
             disabled={loginBusy || !loginPwd}
-            className="w-full py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-semibold inline-flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+            className="w-full py-2 rounded-lg btn-primary text-sm font-medium inline-flex items-center justify-center gap-1.5 transition-colors duration-100 disabled:opacity-40"
           >
             {loginBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-            解锁进入
+            解锁
           </button>
         </form>
       </div>
@@ -367,6 +355,7 @@ export default function App() {
   const today = todayDateString();
   const todayLogs = logs.filter((l) => l.log_date === today);
   const activeProvider = providers.find((p) => p.is_active) || providers[0];
+  const visibleCategories = modules.filter((m) => (m.log_count ?? 0) > 0);
 
   const handleJumpToReference = (ref: AiReference) => {
     if (ref.type === 'study_log') {
@@ -384,31 +373,24 @@ export default function App() {
     { id: 'study', label: '学习日志', short: '学习', icon: BookOpen },
     { id: 'ideas', label: '游戏灵感', short: '灵感', icon: Gamepad2 },
     { id: 'ai', label: 'AI 参谋', short: 'AI', icon: Sparkles },
-    { id: 'settings', label: '设置与同步', short: '设置', icon: Settings },
+    { id: 'settings', label: '设置', short: '设置', icon: Settings },
   ];
 
   return (
     <div className="h-[100dvh] flex flex-col md:flex-row overflow-hidden bg-[var(--bg-app)] text-[var(--text-primary)]">
       {/* DESKTOP SIDEBAR */}
-      <aside className="hidden md:flex md:w-60 lg:w-64 shrink-0 flex-col border-r border-subtle bg-[var(--bg-sidebar)] p-3.5 justify-between">
-        <div className="space-y-5 overflow-y-auto">
+      <aside className="hidden md:flex md:w-56 lg:w-60 shrink-0 flex-col border-r border-subtle bg-[var(--bg-sidebar)] p-3 justify-between">
+        <div className="space-y-4 overflow-y-auto">
           {/* Brand */}
-          <div className="flex items-center justify-between px-1.5">
+          <div className="flex items-center justify-between px-1.5 pt-0.5">
             <div className="flex items-center gap-2.5">
-              <img
-                src="./icon.png"
-                alt="Perlica"
-                className="w-9 h-9 rounded-xl object-contain shadow-sm"
-              />
-              <div>
-                <div className="font-bold text-sm tracking-tight leading-none">Perlica</div>
-                <div className="text-[10px] text-muted mt-0.5">Creator & Study Log</div>
-              </div>
+              <img src="./icon.png" alt="Perlica" className="w-7 h-7 rounded-md object-contain" />
+              <span className="font-semibold text-base tracking-tight">Perlica</span>
             </div>
             <button
               onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
               title="切换明暗主题"
-              className="p-1.5 rounded-lg text-secondary hover:text-primary hover:bg-white/[0.06] transition"
+              className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-[var(--bg-elevated)] transition-colors duration-100"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
@@ -417,18 +399,16 @@ export default function App() {
           {/* Quick Capture Button */}
           <button
             onClick={() => setQuickOpen(true)}
-            className="w-full flex items-center justify-between px-3 py-2 rounded-xl surface hover:border-indigo-400 text-xs text-secondary hover:text-primary transition"
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg surface hover:border-strong text-xs text-secondary hover:text-primary transition-colors duration-100"
           >
             <span className="flex items-center gap-1.5 font-medium">
-              <Plus className="w-3.5 h-3.5 text-indigo-400" /> 快速闪念 / 日志
+              <Plus className="w-3.5 h-3.5" /> 速记
             </span>
-            <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-muted font-mono">
-              Ctrl K
-            </kbd>
+            <kbd className="text-xs text-muted font-mono">Ctrl K</kbd>
           </button>
 
           {/* Main Nav */}
-          <nav className="space-y-1">
+          <nav className="space-y-0.5">
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = tab === item.id;
@@ -436,72 +416,62 @@ export default function App() {
                 <button
                   key={item.id}
                   onClick={() => setTab(item.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition ${
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors duration-100 ${
                     active
-                      ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/25'
-                      : 'text-secondary hover:text-primary hover:bg-white/[0.04] border border-transparent'
+                      ? 'bg-[var(--bg-elevated)] text-primary font-medium'
+                      : 'text-secondary hover:text-primary hover:bg-[var(--bg-elevated)]/60'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-4 h-4 shrink-0" />
                   <span>{item.label}</span>
                 </button>
               );
             })}
           </nav>
 
-          {/* Auto-Generated Category Shortcuts (shown only after records are categorized) */}
-          {modules.some((m) => (m.log_count ?? 0) > 0) && (
-            <div className="pt-2 border-t border-subtle space-y-1">
-              <div className="px-2 mb-1.5">
-                <span className="text-[11px] font-medium text-muted uppercase tracking-wider">
-                  AI 自动分类
-                </span>
-              </div>
-              {modules
-                .filter((m) => (m.log_count ?? 0) > 0)
-                .map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => {
-                      setActiveModuleId(m.id);
-                      setTab('study');
-                    }}
-                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition ${
-                      tab === 'study' && activeModuleId === m.id
-                        ? 'bg-white/[0.08] text-primary font-medium'
-                        : 'text-secondary hover:text-primary hover:bg-white/[0.04]'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2 truncate">
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
-                      <span>{m.icon}</span>
-                      <span className="truncate">{m.name}</span>
-                    </span>
-                    <span className="text-[10px] text-muted">{m.log_count ?? 0}</span>
-                  </button>
-                ))}
+          {/* Auto-Generated Category Shortcuts */}
+          {visibleCategories.length > 0 && (
+            <div className="pt-3 border-t border-subtle space-y-0.5">
+              <div className="px-3 mb-1.5 text-xs text-muted font-medium">分类</div>
+              {visibleCategories.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => {
+                    setActiveModuleId(m.id);
+                    setTab('study');
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs transition-colors duration-100 ${
+                    tab === 'study' && activeModuleId === m.id
+                      ? 'bg-[var(--bg-elevated)] text-primary font-medium'
+                      : 'text-secondary hover:text-primary hover:bg-[var(--bg-elevated)]/60'
+                  }`}
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                    <span className="truncate">{m.name}</span>
+                  </span>
+                  <span className="text-xs text-muted tabular-nums">{m.log_count ?? 0}</span>
+                </button>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Bottom Status Pills: GitHub Sync + AI Engine */}
-        <div className="space-y-2 mt-3">
+        {/* Bottom Status Footer (flat hairline separation, no nested cards) */}
+        <div className="pt-3 mt-3 border-t border-subtle space-y-1">
           <button
             onClick={handleQuickSyncGithub}
             disabled={syncingQuick}
-            className="w-full p-2.5 rounded-xl surface hover:border-strong text-left transition flex items-center justify-between gap-2"
+            className="w-full px-2.5 py-2 rounded-lg hover:bg-[var(--bg-elevated)] text-left transition-colors duration-100 flex items-center justify-between gap-2"
           >
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-[11px] text-muted">
-                <Github className="w-3 h-3" />
-                <span>GitHub 云同步</span>
-              </div>
-              <div className="text-xs font-medium truncate mt-0.5">
-                {githubStatus?.configured ? `@${githubStatus.username}` : '点击配置双端同步'}
-              </div>
-            </div>
+            <span className="flex items-center gap-2 text-xs text-secondary truncate">
+              <Github className="w-3.5 h-3.5 shrink-0 text-muted" />
+              <span className="truncate">
+                {githubStatus?.configured ? `@${githubStatus.username}` : '配置同步'}
+              </span>
+            </span>
             {syncingQuick ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400 shrink-0" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-muted shrink-0" />
             ) : (
               <RefreshCw className="w-3.5 h-3.5 text-muted shrink-0" />
             )}
@@ -509,22 +479,16 @@ export default function App() {
 
           <button
             onClick={() => setTab('settings')}
-            className="w-full p-2.5 rounded-xl surface hover:border-strong text-left transition"
+            className="w-full px-2.5 py-2 rounded-lg hover:bg-[var(--bg-elevated)] text-left transition-colors duration-100 flex items-center gap-2"
           >
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="text-muted flex items-center gap-1">
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    activeProvider?.api_key ? 'bg-emerald-400' : 'bg-amber-400'
-                  }`}
-                />
-                AI 引擎
-              </span>
-              <span className="text-[10px] text-indigo-400">配置</span>
-            </div>
-            <div className="text-xs font-medium truncate mt-1">
-              {activeProvider ? `${activeProvider.name} · ${activeProvider.model}` : '未配置模型'}
-            </div>
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                activeProvider?.api_key ? 'bg-emerald-500' : 'bg-amber-500'
+              }`}
+            />
+            <span className="text-xs text-secondary truncate">
+              {activeProvider ? activeProvider.model : '未配置模型'}
+            </span>
           </button>
         </div>
       </aside>
@@ -532,29 +496,29 @@ export default function App() {
       {/* MOBILE TOP HEADER */}
       <header className="md:hidden shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-subtle bg-[var(--bg-sidebar)]">
         <div className="flex items-center gap-2">
-          <img src="./icon.png" alt="Perlica" className="w-7 h-7 rounded-lg object-contain" />
-          <span className="font-bold text-sm">Perlica</span>
+          <img src="./icon.png" alt="Perlica" className="w-6 h-6 rounded-md object-contain" />
+          <span className="font-semibold text-base">Perlica</span>
         </div>
         <div className="flex items-center gap-1.5">
           {githubStatus?.configured && (
             <button
               onClick={handleQuickSyncGithub}
               disabled={syncingQuick}
-              title="GitHub 双向同步"
-              className="p-1.5 rounded-lg surface text-secondary"
+              title="同步"
+              className="p-2 rounded-lg surface text-secondary"
             >
-              <RefreshCw className={`w-4 h-4 ${syncingQuick ? 'animate-spin text-indigo-400' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${syncingQuick ? 'animate-spin' : ''}`} />
             </button>
           )}
           <button
             onClick={() => setQuickOpen(true)}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-500 text-white text-xs font-medium"
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg btn-primary text-xs font-medium"
           >
             <Plus className="w-3.5 h-3.5" /> 速记
           </button>
           <button
             onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-            className="p-1.5 rounded-lg surface text-secondary"
+            className="p-2 rounded-lg surface text-secondary"
           >
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
@@ -562,21 +526,19 @@ export default function App() {
       </header>
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden p-3.5 sm:p-6 pb-24 md:pb-6 min-w-0">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 pb-24 md:pb-6 min-w-0">
         {IS_STATIC_MODE && githubStatus && !githubStatus.configured && tab !== 'settings' && (
-          <div className="max-w-6xl mx-auto mb-4 rounded-2xl border border-indigo-500/35 bg-indigo-500/10 px-4 py-3 flex items-center justify-between gap-3 flex-wrap text-xs">
-            <div className="flex items-center gap-2 text-primary">
-              <Github className="w-4 h-4 text-indigo-400 shrink-0" />
-              <span>当前正在 GitHub Pages 网页版运行。粘贴你的 GitHub Token 即可立即同步电脑端的所有学习板块、日志与游戏灵感。</span>
-            </div>
+          <div className="max-w-5xl mx-auto mb-5 rounded-xl surface px-4 py-3 flex items-center justify-between gap-3 flex-wrap text-xs">
+            <span className="text-secondary">配置 GitHub Token 以同步电脑端数据</span>
             <button
               onClick={() => setTab('settings')}
-              className="px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white font-medium shrink-0"
+              className="px-3 py-1.5 rounded-lg btn-primary font-medium shrink-0"
             >
-              立即填入 Token 同步
+              去配置
             </button>
           </div>
         )}
+
         {tab === 'today' && (
           <TodayView
             stats={stats}
@@ -663,7 +625,7 @@ export default function App() {
       </main>
 
       {/* MOBILE BOTTOM TAB BAR */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-subtle bg-[var(--bg-sidebar)]/95 backdrop-blur-md px-2 pt-1.5 pb-safe grid grid-cols-5">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-subtle bg-[var(--bg-sidebar)] px-2 pt-1.5 pb-safe grid grid-cols-5">
         {navItems.map((item) => {
           const Icon = item.icon;
           const active = tab === item.id;
@@ -671,12 +633,12 @@ export default function App() {
             <button
               key={item.id}
               onClick={() => setTab(item.id)}
-              className={`flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl transition ${
-                active ? 'text-indigo-400' : 'text-muted'
+              className={`flex flex-col items-center justify-center gap-0.5 py-1 rounded-lg transition-colors duration-100 ${
+                active ? 'text-primary font-medium' : 'text-muted'
               }`}
             >
-              <Icon className="w-5 h-5" />
-              <span className="text-[10px] font-medium">{item.short}</span>
+              <Icon className="w-4 h-4" />
+              <span className="text-xs">{item.short}</span>
             </button>
           );
         })}
@@ -685,33 +647,33 @@ export default function App() {
       {/* QUICK CAPTURE MODAL */}
       {quickOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+          className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
           onClick={() => setQuickOpen(false)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="surface w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 shadow-2xl"
+            className="surface w-full sm:max-w-lg rounded-t-xl sm:rounded-xl p-4 space-y-3"
           >
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 p-1 rounded-xl surface-elevated text-xs">
+              <div className="inline-flex items-center gap-1 p-1 rounded-lg surface-elevated text-xs">
                 <button
                   onClick={() => setQuickKind('study')}
-                  className={`px-3 py-1 rounded-lg font-medium transition ${
-                    quickKind === 'study' ? 'bg-indigo-500 text-white' : 'text-secondary'
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-sm font-medium transition-colors duration-100 ${
+                    quickKind === 'study' ? 'btn-primary' : 'text-secondary hover:text-primary'
                   }`}
                 >
-                  📘 今日学习
+                  <BookOpen className="w-3.5 h-3.5" /> 学习
                 </button>
                 <button
                   onClick={() => setQuickKind('idea')}
-                  className={`px-3 py-1 rounded-lg font-medium transition ${
-                    quickKind === 'idea' ? 'bg-amber-500 text-slate-950' : 'text-secondary'
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-sm font-medium transition-colors duration-100 ${
+                    quickKind === 'idea' ? 'btn-primary' : 'text-secondary hover:text-primary'
                   }`}
                 >
-                  🎮 游戏灵感
+                  <Gamepad2 className="w-3.5 h-3.5" /> 灵感
                 </button>
               </div>
-              <button onClick={() => setQuickOpen(false)} className="text-muted hover:text-primary">
+              <button onClick={() => setQuickOpen(false)} className="p-1 text-muted hover:text-primary">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -721,37 +683,33 @@ export default function App() {
               rows={5}
               value={quickContent}
               onChange={(e) => setQuickContent(e.target.value)}
-              placeholder={
-                quickKind === 'idea'
-                  ? '随手写一段你的游戏灵感（不用起标题，保留原文，可让 AI 帮你忠实整理）...'
-                  : '写下今天学了什么（不用选分类、不用起标题，AI 会自动为你分类并整理归纳）...'
-              }
-              className="w-full px-3.5 py-2.5 rounded-xl surface-elevated text-sm focus:outline-none focus:border-indigo-500 resize-none"
+              placeholder={quickKind === 'idea' ? '写下游戏灵感...' : '写下今天学了什么...'}
+              className="w-full px-3 py-2.5 rounded-lg surface-elevated text-sm leading-relaxed focus:outline-none focus:border-strong resize-none"
             />
 
-            <div className="flex justify-end gap-2 flex-wrap">
+            <div className="flex justify-end gap-2">
               <button
                 onClick={() => setQuickOpen(false)}
                 disabled={quickBusy !== null}
-                className="px-4 py-2 rounded-xl surface-elevated text-xs font-medium"
+                className="px-3 py-1.5 rounded-lg surface-elevated text-xs font-medium text-secondary hover:text-primary"
               >
                 取消
               </button>
               <button
                 onClick={() => handleQuickSubmit(false)}
                 disabled={quickBusy !== null || !quickContent.trim()}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl surface-elevated hover:border-strong text-xs font-medium disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg surface-elevated hover:border-strong text-xs font-medium disabled:opacity-40"
               >
                 {quickBusy === 'save' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                仅保存原文
+                保存
               </button>
               <button
                 onClick={() => handleQuickSubmit(true)}
                 disabled={quickBusy !== null || !quickContent.trim()}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-semibold disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg btn-primary text-xs font-medium disabled:opacity-40"
               >
                 {quickBusy === 'ai' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                保存并 AI 整理
+                保存并整理
               </button>
             </div>
           </div>
@@ -761,10 +719,10 @@ export default function App() {
       {/* TOAST */}
       {toast && (
         <div
-          className={`fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl text-xs font-medium shadow-xl border backdrop-blur-md transition ${
+          className={`fixed top-4 right-4 z-50 px-3.5 py-2 rounded-lg text-xs font-medium border ${
             toast.type === 'err'
-              ? 'bg-rose-500/90 text-white border-rose-400/40'
-              : 'bg-[#171b26]/95 text-white border-indigo-500/40'
+              ? 'bg-rose-600 text-white border-rose-500'
+              : 'surface text-primary border-strong'
           }`}
         >
           {toast.msg}

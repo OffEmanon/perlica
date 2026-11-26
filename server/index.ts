@@ -259,10 +259,13 @@ app.get('/api/dashboard/stats', (_req, res) => {
     todayCompletedTasks += l.tasks.filter((t) => t.done).length;
   }
 
+  const formatLocalYmd = (d: Date): string =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
   const nowDate = new Date(`${today}T00:00:00`);
   const weekAgo = new Date(nowDate);
   weekAgo.setDate(nowDate.getDate() - 6);
-  const weekStartStr = weekAgo.toISOString().slice(0, 10);
+  const weekStartStr = formatLocalYmd(weekAgo);
 
   const weekFilteredLogs = logs.filter((l) => l.log_date >= weekStartStr && l.log_date <= today);
   const weekMinutes = weekFilteredLogs.reduce((s, l) => s + l.duration_minutes, 0);
@@ -275,7 +278,7 @@ app.get('/api/dashboard/stats', (_req, res) => {
     cursor.setDate(cursor.getDate() - 1);
   }
   while (true) {
-    const key = cursor.toISOString().slice(0, 10);
+    const key = formatLocalYmd(cursor);
     if (dateSet.has(key)) {
       streakDays++;
       cursor.setDate(cursor.getDate() - 1);
@@ -295,7 +298,7 @@ app.get('/api/dashboard/stats', (_req, res) => {
   for (let i = 27; i >= 0; i--) {
     const d = new Date(nowDate);
     d.setDate(nowDate.getDate() - i);
-    const ds = d.toISOString().slice(0, 10);
+    const ds = formatLocalYmd(d);
     const entry = heatMapRec.get(ds) || { minutes: 0, count: 0 };
     heatmap.push({ date: ds, ...entry });
   }
