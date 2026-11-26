@@ -539,6 +539,7 @@ export default function App() {
           </div>
         )}
 
+        <div key={tab} className="anim-view lg:h-full">
         {tab === 'today' && (
           <TodayView
             stats={stats}
@@ -622,6 +623,7 @@ export default function App() {
             onToast={showToast}
           />
         )}
+        </div>
       </main>
 
       {/* MOBILE BOTTOM TAB BAR */}
@@ -647,12 +649,12 @@ export default function App() {
       {/* QUICK CAPTURE MODAL */}
       {quickOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4 anim-backdrop"
           onClick={() => setQuickOpen(false)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="surface w-full sm:max-w-lg rounded-t-xl sm:rounded-xl p-4 space-y-3"
+            className="surface w-full sm:max-w-lg rounded-t-xl sm:rounded-xl p-4 space-y-3 anim-modal"
           >
             <div className="flex items-center justify-between">
               <div className="inline-flex items-center gap-1 p-1 rounded-lg surface-elevated text-xs">
@@ -719,7 +721,7 @@ export default function App() {
       {/* TOAST */}
       {toast && (
         <div
-          className={`fixed top-4 right-4 z-50 px-3.5 py-2 rounded-lg text-xs font-medium border ${
+          className={`fixed top-4 right-4 z-50 px-3.5 py-2 rounded-lg text-xs font-medium border anim-toast ${
             toast.type === 'err'
               ? 'bg-rose-600 text-white border-rose-500'
               : 'surface text-primary border-strong'

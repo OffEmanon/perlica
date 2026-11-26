@@ -398,7 +398,7 @@ export function AiHubView({
                 生成或选择一条复盘查看
               </div>
             ) : (
-              <div className="space-y-4">
+              <div key={activeReview.id} className="space-y-4 anim-view">
                 <div className="flex items-start justify-between gap-3 pb-3 border-b border-subtle">
                   <div>
                     <div className="flex items-center gap-2.5 flex-wrap">

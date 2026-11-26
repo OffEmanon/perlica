@@ -54,19 +54,19 @@ export function TodayView({
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={onOpenNewLog}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg btn-primary text-sm font-medium transition-colors duration-100"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg btn-primary text-sm font-medium"
           >
-            <Plus className="w-4 h-4" /> 记录学习
+            <Plus className="w-3.5 h-3.5" /> 记录学习
           </button>
           <button
             onClick={onOpenNewIdea}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg surface hover:border-strong text-sm text-secondary hover:text-primary transition-colors duration-100"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg btn-primary text-sm font-medium"
           >
-            记录灵感
+            <Plus className="w-3.5 h-3.5" /> 记录灵感
           </button>
           <button
             onClick={onTriggerDailyReview}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg surface hover:border-strong text-sm text-secondary hover:text-primary transition-colors duration-100"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg surface hover:border-strong text-sm text-secondary hover:text-primary"
           >
             <Sparkles className="w-3.5 h-3.5" /> 复盘
           </button>
@@ -121,7 +121,7 @@ export function TodayView({
                   <div
                     key={log.id}
                     onClick={() => onSelectLog(log)}
-                    className="surface rounded-xl p-4 hover:border-strong transition-colors duration-100 cursor-pointer space-y-2.5"
+                    className="surface card-interactive rounded-xl p-4 hover:border-strong cursor-pointer space-y-2.5"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-base font-semibold">{log.title}</span>
@@ -168,7 +168,7 @@ export function TodayView({
                 <div
                   key={cell.date}
                   title={`${cell.date}：${cell.count} 条`}
-                  className={`aspect-square rounded-sm ${heatColor(cell.count)}`}
+                  className={`aspect-square rounded-sm transition-transform duration-150 hover:scale-110 ${heatColor(cell.count)}`}
                 />
               ))}
             </div>
@@ -199,7 +199,7 @@ export function TodayView({
                         <span className="text-xs text-muted tabular-nums">{total}</span>
                       </div>
                       <div className="h-1 rounded-full bg-[var(--bg-elevated)] overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: c.color }} />
+                        <div className="h-full rounded-full transition-[width] duration-300 ease-out" style={{ width: `${pct}%`, backgroundColor: c.color }} />
                       </div>
                     </button>
                   );

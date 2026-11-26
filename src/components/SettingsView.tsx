@@ -353,7 +353,7 @@ export function SettingsView({
 
       {/* SECTION: SYNC */}
       {section === 'sync' && (
-        <div className="space-y-4">
+        <div key="sync" className="space-y-4 anim-view">
           <div className="surface rounded-xl p-5 space-y-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-2.5">
@@ -545,7 +545,7 @@ export function SettingsView({
 
       {/* SECTION: MODELS */}
       {section === 'models' && (
-        <div className="space-y-4">
+        <div key="models" className="space-y-4 anim-view">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted">模型与 API Key 随私有 Gist 同步</span>
             <button
@@ -748,7 +748,7 @@ export function SettingsView({
 
       {/* SECTION: PROMPTS */}
       {section === 'prompts' && (
-        <div className="space-y-3">
+        <div key="prompts" className="space-y-3 anim-view">
           {prompts.map((tpl) => (
             <div key={tpl.id} className="surface rounded-xl p-4 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
@@ -779,7 +779,7 @@ export function SettingsView({
 
       {/* SECTION: DATA */}
       {section === 'data' && (
-        <div className="space-y-4">
+        <div key="data" className="space-y-4 anim-view">
           <div className="grid sm:grid-cols-3 gap-3">
             <button
               type="button"

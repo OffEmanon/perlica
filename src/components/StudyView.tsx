@@ -328,7 +328,7 @@ export function StudyView({
                       setIsDirty(false);
                       onSelectLogId(log.id);
                     }}
-                    className={`w-full text-left p-3.5 rounded-xl border transition-colors duration-100 ${
+                    className={`w-full text-left p-3.5 rounded-xl border card-interactive ${
                       selected
                         ? 'bg-[var(--bg-elevated)] border-strong'
                         : 'surface hover:border-strong'
@@ -384,7 +384,7 @@ export function StudyView({
               选择左侧记录查看详情
             </div>
           ) : (
-            <div className="surface rounded-xl p-5 space-y-5 lg:overflow-y-auto flex-1">
+            <div key={editing.id} className="surface rounded-xl p-5 space-y-5 lg:overflow-y-auto flex-1 anim-view">
               {/* Action Bar */}
               <div className="flex items-center justify-between gap-2 pb-3 border-b border-subtle">
                 <button
