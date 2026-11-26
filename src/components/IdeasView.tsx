@@ -201,7 +201,7 @@ export function IdeasView({
           <button
             onClick={() => handleQuickCreate(true)}
             disabled={creating !== null || !quickDraft.trim()}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg btn-primary text-xs font-medium transition-colors duration-100 disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg btn-primary text-xs font-medium icon-sparkle-hover disabled:opacity-40"
           >
             {creating === 'ai' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
             保存并整理
@@ -297,7 +297,7 @@ export function IdeasView({
                     setIsDirty(false);
                     onSelectIdeaId(null);
                   }}
-                  className="lg:hidden inline-flex items-center gap-1 text-xs text-secondary hover:text-primary"
+                  className="lg:hidden inline-flex items-center gap-1 text-xs text-secondary hover:text-primary icon-nudge-left"
                 >
                   <ArrowLeft className="w-4 h-4" /> 返回
                 </button>
@@ -305,7 +305,7 @@ export function IdeasView({
                   <button
                     onClick={handleOrganize}
                     disabled={organizing}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg surface-elevated hover:border-strong text-xs font-medium text-secondary hover:text-primary transition-colors duration-100 disabled:opacity-40"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg surface-elevated hover:border-strong text-xs font-medium text-secondary hover:text-primary icon-sparkle-hover disabled:opacity-40"
                   >
                     {organizing ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -317,7 +317,7 @@ export function IdeasView({
                   <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg btn-primary text-xs font-medium transition-colors duration-100"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg btn-primary text-xs font-medium"
                   >
                     {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                     保存
@@ -325,7 +325,7 @@ export function IdeasView({
                   <button
                     onClick={() => handleDelete(editing.id)}
                     title="删除"
-                    className="p-1.5 rounded-lg text-muted hover:text-rose-500 transition-colors duration-100"
+                    className="p-1.5 rounded-lg text-muted hover:text-rose-500 icon-tilt-hover"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

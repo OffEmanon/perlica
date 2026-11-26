@@ -384,13 +384,13 @@ export default function App() {
           {/* Brand */}
           <div className="flex items-center justify-between px-1.5 pt-0.5">
             <div className="flex items-center gap-2.5">
-              <img src="./icon.png" alt="Perlica" className="w-7 h-7 rounded-md object-contain" />
+              <img src="./icon.png" alt="Perlica" className="w-7 h-7 rounded-md object-contain brand-icon cursor-pointer" />
               <span className="font-semibold text-base tracking-tight">Perlica</span>
             </div>
             <button
               onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
               title="切换明暗主题"
-              className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-[var(--bg-elevated)] transition-colors duration-100"
+              className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-[var(--bg-elevated)] icon-spin-hover"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
@@ -399,7 +399,7 @@ export default function App() {
           {/* Quick Capture Button */}
           <button
             onClick={() => setQuickOpen(true)}
-            className="w-full flex items-center justify-between px-3 py-2 rounded-lg surface hover:border-strong text-xs text-secondary hover:text-primary transition-colors duration-100"
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg surface hover:border-strong text-xs text-secondary hover:text-primary icon-plus-hover"
           >
             <span className="flex items-center gap-1.5 font-medium">
               <Plus className="w-3.5 h-3.5" /> 速记
@@ -416,7 +416,7 @@ export default function App() {
                 <button
                   key={item.id}
                   onClick={() => setTab(item.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors duration-100 ${
+                  className={`nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm ${
                     active
                       ? 'bg-[var(--bg-elevated)] text-primary font-medium'
                       : 'text-secondary hover:text-primary hover:bg-[var(--bg-elevated)]/60'
@@ -462,7 +462,7 @@ export default function App() {
           <button
             onClick={handleQuickSyncGithub}
             disabled={syncingQuick}
-            className="w-full px-2.5 py-2 rounded-lg hover:bg-[var(--bg-elevated)] text-left transition-colors duration-100 flex items-center justify-between gap-2"
+            className="w-full px-2.5 py-2 rounded-lg hover:bg-[var(--bg-elevated)] text-left flex items-center justify-between gap-2 icon-spin-hover"
           >
             <span className="flex items-center gap-2 text-xs text-secondary truncate">
               <Github className="w-3.5 h-3.5 shrink-0 text-muted" />
@@ -505,20 +505,20 @@ export default function App() {
               onClick={handleQuickSyncGithub}
               disabled={syncingQuick}
               title="同步"
-              className="p-2 rounded-lg surface text-secondary"
+              className="p-2 rounded-lg surface text-secondary icon-spin-hover"
             >
               <RefreshCw className={`w-4 h-4 ${syncingQuick ? 'animate-spin' : ''}`} />
             </button>
           )}
           <button
             onClick={() => setQuickOpen(true)}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg btn-primary text-xs font-medium"
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg btn-primary text-xs font-medium icon-plus-hover"
           >
             <Plus className="w-3.5 h-3.5" /> 速记
           </button>
           <button
             onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-            className="p-2 rounded-lg surface text-secondary"
+            className="p-2 rounded-lg surface text-secondary icon-spin-hover"
           >
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>

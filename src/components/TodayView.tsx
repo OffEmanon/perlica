@@ -54,19 +54,19 @@ export function TodayView({
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={onOpenNewLog}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg btn-primary text-sm font-medium"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg btn-primary text-sm font-medium icon-plus-hover"
           >
             <Plus className="w-3.5 h-3.5" /> 记录学习
           </button>
           <button
             onClick={onOpenNewIdea}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg btn-primary text-sm font-medium"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg btn-primary text-sm font-medium icon-plus-hover"
           >
             <Plus className="w-3.5 h-3.5" /> 记录灵感
           </button>
           <button
             onClick={onTriggerDailyReview}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg surface hover:border-strong text-sm text-secondary hover:text-primary"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg surface hover:border-strong text-sm text-secondary hover:text-primary icon-sparkle-hover"
           >
             <Sparkles className="w-3.5 h-3.5" /> 复盘
           </button>
@@ -168,7 +168,7 @@ export function TodayView({
                 <div
                   key={cell.date}
                   title={`${cell.date}：${cell.count} 条`}
-                  className={`aspect-square rounded-sm transition-transform duration-150 hover:scale-110 ${heatColor(cell.count)}`}
+                  className={`aspect-square rounded-sm transition-transform duration-200 hover:scale-125 cursor-default ${heatColor(cell.count)}`}
                 />
               ))}
             </div>
