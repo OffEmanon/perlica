@@ -3,3 +3,6 @@ dist/
 data/
 *.log
 .DS_Store
+.conversation-archive/
+CONVERSATION_HISTORY.md
+PROJECT_HANDOFF.md

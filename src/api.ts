@@ -128,6 +128,8 @@ const serverApi = {
   }) => request<AiReview>('/api/ai/review', { method: 'POST', body: JSON.stringify(body) }),
   evaluateLog: (id: string, provider_id?: string) =>
     request<StudyLog>(`/api/ai/evaluate-log/${id}`, { method: 'POST', body: JSON.stringify({ provider_id }) }),
+  organizeLog: (id: string, provider_id?: string) =>
+    request<StudyLog>(`/api/ai/organize-log/${id}`, { method: 'POST', body: JSON.stringify({ provider_id }) }),
   organizeIdea: (id: string, provider_id?: string) =>
     request<GameIdea>(`/api/ai/organize-idea/${id}`, { method: 'POST', body: JSON.stringify({ provider_id }) }),
   assistIdea: (

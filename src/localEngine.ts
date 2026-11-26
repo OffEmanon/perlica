@@ -111,6 +111,20 @@ function defaultPrompts(): PromptTemplate[] {
       updated_at: now,
     },
     {
+      id: 'tpl_study_org',
+      key: 'study_organize',
+      name: '学习日志自动整理归纳',
+      description: '保留每日原始学习记录，自动提炼标题、标签并整理为结构化复习要点。',
+      system_prompt: `你是一位克制、条理清晰的学习笔记整理助手。用户会发给你一段今天随手记下的原始学习记录（可能比较口语化或零散）。
+你的唯一任务是帮用户整理归纳成清晰易复习的笔记，必须严格遵守以下规则：
+1. 【忠于原文，不胡乱编造】严格以用户写下的内容为核心进行归纳，不要凭空编造用户根本没学过的大段章节；但可以对用户提到的数学公式规范化为标准 LaTeX（行内用 $...$，独立公式用 $$...$$），对提到的代码/引擎接口用规范代码块排版。
+2. 【提炼标题与标签】提炼一个简短准确的标题（15字以内），以及 2~4 个精准的知识点标签。
+3. 【结构化归纳】按逻辑将今日所学归纳为简洁的 Markdown 要点（如核心知识点、关键公式/代码、疑难/待巩固点——仅在原文有对应内容时列出，原文简短就精炼分条，不要硬凑空洞大纲）。
+4. 仅返回合法 JSON 对象（不要用 \`\`\`json 包裹），格式严格为：
+{"title": "简短标题", "tags": ["标签1", "标签2"], "organized": "整理归纳后的 Markdown 文本"}`,
+      updated_at: now,
+    },
+    {
       id: 'tpl_organize',
       key: 'idea_organize',
       name: '游戏灵感忠实整理（不添油加醋）',
@@ -213,6 +227,10 @@ function loadState(): LocalDbState {
     if (!mergedPrompts.some((t) => t.key === 'idea_organize')) {
       const orgTpl = base.prompt_templates.find((t) => t.key === 'idea_organize');
       if (orgTpl) mergedPrompts.unshift(orgTpl);
+    }
+    if (!mergedPrompts.some((t) => t.key === 'study_organize')) {
+      const studyTpl = base.prompt_templates.find((t) => t.key === 'study_organize');
+      if (studyTpl) mergedPrompts.unshift(studyTpl);
     }
     return {
       ...base,
@@ -598,15 +616,11 @@ function formatLogsForAi(logs: StudyLog[], moduleMap: Map<string, StudyModule>):
   return logs
     .map((log) => {
       const mod = moduleMap.get(log.module_id);
-      const taskSummary = log.tasks.length
-        ? log.tasks.map((t) => `  - [${t.done ? 'x' : ' '}] ${t.text}`).join('\n')
-        : '  - （无任务清单）';
       return [
         `### ${log.log_date} | 板块：${mod ? `${mod.icon} ${mod.name}` : '未知'} | 标题：${log.title}`,
-        `- 时长：${log.duration_minutes} 分钟 | 自评：${log.rating}/5 | 标签：${log.tags.join(', ') || '无'}`,
-        mod?.goal ? `- 板块长期目标：${mod.goal}` : '',
-        `- 任务清单：\n${taskSummary}`,
-        `- 笔记内容：\n${log.content.slice(0, 1200)}`,
+        log.tags.length ? `- 标签：${log.tags.join(', ')}` : '',
+        `- 原始记录：\n${log.content.slice(0, 1200)}`,
+        log.ai_feedback ? `- AI 整理归纳：\n${log.ai_feedback.slice(0, 1200)}` : '',
       ]
         .filter(Boolean)
         .join('\n');
@@ -884,7 +898,9 @@ export const localEngine = {
     const weekAgo = new Date(nowDate);
     weekAgo.setDate(nowDate.getDate() - 6);
     const weekStartStr = weekAgo.toISOString().slice(0, 10);
-    const weekMinutes = logs.filter((l) => l.log_date >= weekStartStr && l.log_date <= today).reduce((s, l) => s + l.duration_minutes, 0);
+    const weekFilteredLogs = logs.filter((l) => l.log_date >= weekStartStr && l.log_date <= today);
+    const weekMinutes = weekFilteredLogs.reduce((s, l) => s + l.duration_minutes, 0);
+    const weekLogs = weekFilteredLogs.length;
 
     const dateSet = new Set(logs.map((l) => l.log_date));
     let streakDays = 0;
@@ -931,6 +947,7 @@ export const localEngine = {
       todayCompletedTasks,
       todayTotalTasks,
       weekMinutes,
+      weekLogs,
       streakDays,
       totalLogs: logs.length,
       totalIdeas: st.game_ideas.length,
@@ -1003,14 +1020,17 @@ export const localEngine = {
   createLog: async (body: Partial<StudyLog>): Promise<StudyLog> => {
     const st = loadState();
     const now = new Date().toISOString();
+    const rawContent = body.content || '';
+    const firstLine = rawContent.trim().split(/\r?\n/)[0] || '';
+    const fallbackTitle = firstLine.length > 22 ? `${firstLine.slice(0, 22)}...` : firstLine;
     const created: StudyLog = {
       id: uid('log'),
       module_id: String(body.module_id || ''),
       log_date: body.log_date || todayStr(),
-      title: String(body.title || '').trim(),
-      content: body.content || '',
+      title: String(body.title || '').trim() || fallbackTitle || '未命名学习记录',
+      content: rawContent,
       tasks: body.tasks || [],
-      duration_minutes: Number(body.duration_minutes ?? 30),
+      duration_minutes: Number(body.duration_minutes ?? 0),
       rating: Number(body.rating ?? 0),
       tags: body.tags || [],
       ai_feedback: '',
@@ -1235,6 +1255,65 @@ export const localEngine = {
     return st.study_logs[idx];
   },
 
+  organizeLog: async (id: string, provider_id?: string): Promise<StudyLog> => {
+    const st = loadState();
+    const idx = st.study_logs.findIndex((l) => l.id === id);
+    if (idx < 0) throw new Error('学习日志不存在');
+    const log = st.study_logs[idx];
+    const rawText = (log.content || log.title || '').trim();
+    if (!rawText) throw new Error('请先写下今天学了什么');
+
+    const provider = getProvider(st, provider_id);
+    const mod = st.modules.find((m) => m.id === log.module_id);
+    const tpl = st.prompt_templates.find((t) => t.key === 'study_organize');
+    const raw = await callBrowserLlm(
+      provider,
+      [
+        {
+          role: 'system',
+          content:
+            tpl?.system_prompt ||
+            '请将用户的每日学习记录整理归纳为清晰的 Markdown 笔记，忠于原文不胡乱编造，仅返回 JSON: {"title":"","tags":[],"organized":""}',
+        },
+        {
+          role: 'user',
+          content: `所属学习板块：${mod?.name || '学习'}\n学习日期：${log.log_date}\n\n以下是我今天写下的原始学习记录，请帮我整理归纳：\n\n${rawText}`,
+        },
+      ],
+      { temperature: 0.25 }
+    );
+
+    let nextTitle = log.title;
+    let nextTags = log.tags;
+    let organized = raw.trim();
+
+    try {
+      const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(match ? match[0] : cleaned) as {
+        title?: string;
+        tags?: string[];
+        organized?: string;
+      };
+      if (parsed.title?.trim()) nextTitle = parsed.title.trim().slice(0, 40);
+      if (Array.isArray(parsed.tags) && parsed.tags.length > 0) {
+        nextTags = Array.from(new Set(parsed.tags.slice(0, 5).map((t) => String(t).trim()).filter(Boolean)));
+      }
+      if (parsed.organized?.trim()) organized = parsed.organized.trim();
+    } catch {
+      // keep raw markdown fallback
+    }
+
+    // Preserve log.content untouched! Store organized summary in ai_feedback
+    log.title = nextTitle;
+    log.tags = nextTags;
+    log.ai_feedback = organized;
+    log.updated_at = new Date().toISOString();
+    saveState(st);
+    scheduleAutoSync();
+    return log;
+  },
+
   organizeIdea: async (id: string, provider_id?: string): Promise<GameIdea> => {
     const st = loadState();
     const idx = st.game_ideas.findIndex((i) => i.id === id);
@@ -1432,7 +1511,10 @@ export const localEngine = {
         blocks.push('## 相关学习日志');
         for (const { log } of top) {
           const mod = modMap.get(log.module_id);
-          blocks.push(`### [${log.log_date}] ${mod?.name || '学习'} — ${log.title}\n${log.content.slice(0, 600)}`);
+          const body = log.ai_feedback
+            ? `【AI整理归纳】\n${log.ai_feedback.slice(0, 500)}\n【原始记录】\n${log.content.slice(0, 300)}`
+            : log.content.slice(0, 600);
+          blocks.push(`### [${log.log_date}] ${mod?.name || '学习'} — ${log.title}\n${body}`);
           refs.push({ type: 'study_log', id: log.id, title: log.title, meta: `${log.log_date} · ${mod?.name || '学习'}` });
         }
       }

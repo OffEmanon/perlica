@@ -152,6 +152,7 @@ export interface DashboardStats {
   todayCompletedTasks: number;
   todayTotalTasks: number;
   weekMinutes: number;
+  weekLogs?: number;
   streakDays: number;
   totalLogs: number;
   totalIdeas: number;

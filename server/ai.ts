@@ -251,10 +251,12 @@ export function buildKnowledgeContext(
     if (scoredLogs.length > 0) {
       blocks.push('## 相关学习日志');
       for (const { log, mod } of scoredLogs) {
-        const doneCount = log.tasks.filter((t) => t.done).length;
         const modName = mod ? `${mod.icon} ${mod.name}` : '未分类板块';
+        const body = log.ai_feedback
+          ? `【AI整理归纳】\n${log.ai_feedback.slice(0, 500)}\n【原始记录】\n${log.content.slice(0, 350)}`
+          : log.content.slice(0, 650);
         blocks.push(
-          `### [${log.log_date}] ${modName} — ${log.title}\n- 耗时：${log.duration_minutes}分钟 | 自评：${log.rating}/5 | 任务：${doneCount}/${log.tasks.length} | 标签：${log.tags.join(', ') || '无'}\n${log.content.slice(0, 650)}`
+          `### [${log.log_date}] ${modName} — ${log.title}\n- 标签：${log.tags.join(', ') || '无'}\n${body}`
         );
         references.push({
           type: 'study_log',
@@ -311,15 +313,11 @@ export function formatStudyLogsForReview(logs: StudyLog[], moduleMap: Map<string
   return logs
     .map((log) => {
       const mod = moduleMap.get(log.module_id);
-      const taskSummary = log.tasks.length
-        ? log.tasks.map((t) => `  - [${t.done ? 'x' : ' '}] ${t.text}`).join('\n')
-        : '  - （无任务清单）';
       return [
         `### ${log.log_date} | 板块：${mod ? `${mod.icon} ${mod.name}` : '未知'} | 标题：${log.title}`,
-        `- 时长：${log.duration_minutes} 分钟 | 自评：${log.rating}/5 | 标签：${log.tags.join(', ') || '无'}`,
-        mod?.goal ? `- 板块长期目标：${mod.goal}` : '',
-        `- 任务清单：\n${taskSummary}`,
-        `- 笔记内容：\n${log.content.slice(0, 1200)}`,
+        log.tags.length ? `- 标签：${log.tags.join(', ')}` : '',
+        `- 原始记录：\n${log.content.slice(0, 1200)}`,
+        log.ai_feedback ? `- AI 整理归纳：\n${log.ai_feedback.slice(0, 1200)}` : '',
       ]
         .filter(Boolean)
         .join('\n');

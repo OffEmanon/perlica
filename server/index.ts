@@ -262,9 +262,9 @@ app.get('/api/dashboard/stats', (_req, res) => {
   weekAgo.setDate(nowDate.getDate() - 6);
   const weekStartStr = weekAgo.toISOString().slice(0, 10);
 
-  const weekMinutes = logs
-    .filter((l) => l.log_date >= weekStartStr && l.log_date <= today)
-    .reduce((s, l) => s + l.duration_minutes, 0);
+  const weekFilteredLogs = logs.filter((l) => l.log_date >= weekStartStr && l.log_date <= today);
+  const weekMinutes = weekFilteredLogs.reduce((s, l) => s + l.duration_minutes, 0);
+  const weekLogs = weekFilteredLogs.length;
 
   const dateSet = new Set(logs.map((l) => l.log_date));
   let streakDays = 0;
@@ -322,6 +322,7 @@ app.get('/api/dashboard/stats', (_req, res) => {
     todayCompletedTasks,
     todayTotalTasks,
     weekMinutes,
+    weekLogs,
     streakDays,
     totalLogs: logs.length,
     totalIdeas: Number(ideaTotals.total || 0),
@@ -418,15 +419,19 @@ app.post('/api/logs', (req, res) => {
   const {
     module_id,
     log_date = todayStr(),
-    title,
+    title = '',
     content = '',
     tasks = [],
-    duration_minutes = 30,
+    duration_minutes = 0,
     rating = 0,
     tags = [],
   } = req.body || {};
   if (!module_id) return res.status(400).json({ error: '请选择学习板块' });
-  if (!title?.trim()) return res.status(400).json({ error: '标题不能为空' });
+  const rawContent = String(content || '');
+  const firstLine = rawContent.trim().split(/\r?\n/)[0] || '';
+  const fallbackTitle = firstLine.length > 22 ? `${firstLine.slice(0, 22)}...` : firstLine;
+  const finalTitle = String(title || '').trim() || fallbackTitle;
+  if (!finalTitle) return res.status(400).json({ error: '请先写下今天学了什么' });
 
   const id = uid('log');
   const now = new Date().toISOString();
@@ -437,8 +442,8 @@ app.post('/api/logs', (req, res) => {
     id,
     module_id,
     log_date,
-    title.trim(),
-    content,
+    finalTitle,
+    rawContent,
     JSON.stringify(tasks),
     Number(duration_minutes) || 0,
     Number(rating) || 0,
@@ -809,6 +814,78 @@ app.post('/api/ai/review', async (req, res) => {
     ).run(id, scope, reviewTitle, date_from, date_to, module_id, score, content, `${provider.name} (${provider.model})`, now);
 
     res.json(db.prepare('SELECT * FROM ai_reviews WHERE id = ?').get(id));
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Single study log organize & summarize (preserve raw text)
+app.post('/api/ai/organize-log/:id', async (req, res) => {
+  try {
+    const row = db.prepare('SELECT * FROM study_logs WHERE id = ?').get(req.params.id) as
+      | Record<string, unknown>
+      | undefined;
+    if (!row) return res.status(404).json({ error: '学习日志不存在' });
+    const log = mapStudyLog(row);
+    const rawText = (log.content || log.title || '').trim();
+    if (!rawText) return res.status(400).json({ error: '请先写下今天学了什么' });
+
+    const provider = getActiveProvider(req.body?.provider_id);
+    if (!provider) return res.status(400).json({ error: '请先在设置中配置 AI 模型' });
+
+    const mod = db.prepare('SELECT name FROM modules WHERE id = ?').get(log.module_id) as
+      | { name: string }
+      | undefined;
+    const tpl = getPromptTemplate('study_organize');
+    const systemPrompt =
+      tpl?.system_prompt ||
+      '请将用户的每日学习记录整理归纳为清晰的 Markdown 笔记，忠于原文不胡乱编造，仅返回 JSON: {"title":"","tags":[],"organized":""}';
+
+    const raw = await callLlm(
+      provider,
+      [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: `所属学习板块：${mod?.name || '学习'}\n学习日期：${log.log_date}\n\n以下是我今天写下的原始学习记录，请帮我整理归纳：\n\n${rawText}`,
+        },
+      ],
+      { temperature: 0.25 }
+    );
+
+    let nextTitle = log.title;
+    let nextTags = log.tags;
+    let organized = raw.trim();
+
+    try {
+      const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as {
+        title?: string;
+        tags?: string[];
+        organized?: string;
+      };
+      if (parsed.title?.trim()) nextTitle = parsed.title.trim().slice(0, 40);
+      if (Array.isArray(parsed.tags) && parsed.tags.length > 0) {
+        nextTags = Array.from(new Set(parsed.tags.slice(0, 5).map((t) => String(t).trim()).filter(Boolean)));
+      }
+      if (parsed.organized?.trim()) organized = parsed.organized.trim();
+    } catch {
+      // Keep raw markdown fallback if model didn't return JSON
+    }
+
+    const now = new Date().toISOString();
+    // Preserve log.content untouched! Store organized summary in ai_feedback
+    db.prepare('UPDATE study_logs SET title = ?, tags_json = ?, ai_feedback = ?, updated_at = ? WHERE id = ?').run(
+      nextTitle,
+      JSON.stringify(nextTags),
+      organized,
+      now,
+      log.id
+    );
+    scheduleAutoSync();
+    const updated = db.prepare('SELECT * FROM study_logs WHERE id = ?').get(log.id) as Record<string, unknown>;
+    res.json(mapStudyLog(updated));
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
   }

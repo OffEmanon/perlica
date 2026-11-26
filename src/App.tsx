@@ -66,10 +66,10 @@ export default function App() {
 
   // Quick capture modal
   const [quickOpen, setQuickOpen] = useState(false);
-  const [quickKind, setQuickKind] = useState<'idea' | 'study'>('idea');
-  const [quickTitle, setQuickTitle] = useState('');
+  const [quickKind, setQuickKind] = useState<'idea' | 'study'>('study');
   const [quickContent, setQuickContent] = useState('');
   const [quickModuleId, setQuickModuleId] = useState('');
+  const [quickBusy, setQuickBusy] = useState<'save' | 'ai' | null>(null);
 
   // Toast
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
@@ -247,22 +247,24 @@ export default function App() {
     }
   };
 
-  const handleQuickSubmit = async (autoOrganizeIdea = false) => {
+  const handleQuickSubmit = async (autoOrganize = false) => {
+    const raw = quickContent.trim();
+    if (!raw || quickBusy !== null) return;
+    const firstLine = raw.split(/\r?\n/)[0] || '';
+    const autoTitle = firstLine.length > 22 ? `${firstLine.slice(0, 22)}...` : firstLine;
+
     if (quickKind === 'idea') {
-      const raw = (quickContent.trim() || quickTitle.trim());
-      if (!raw) return;
+      setQuickBusy(autoOrganize ? 'ai' : 'save');
       try {
-        const firstLine = raw.split(/\r?\n/)[0] || '未命名灵感';
-        const autoTitle = firstLine.length > 22 ? `${firstLine.slice(0, 22)}...` : firstLine;
         const created = await api.createIdea({
-          title: autoTitle,
+          title: autoTitle || '未命名灵感',
           summary: '',
           content: raw,
           status: 'spark',
           category: '玩法机制',
         });
         let finalIdea = created;
-        if (autoOrganizeIdea) {
+        if (autoOrganize) {
           try {
             finalIdea = await api.organizeIdea(created.id);
             showToast('灵感原文已保留，AI 整理完成');
@@ -274,44 +276,57 @@ export default function App() {
         }
         setSelectedIdeaId(finalIdea.id);
         setTab('ideas');
-        setQuickTitle('');
         setQuickContent('');
         setQuickOpen(false);
         refreshAll();
       } catch (e) {
         showToast(e instanceof Error ? e.message : '保存失败', 'err');
+      } finally {
+        setQuickBusy(null);
       }
       return;
     }
 
-    if (!quickTitle.trim()) return;
+    const modId = quickModuleId || modules[0]?.id;
+    if (!modId) {
+      setQuickOpen(false);
+      setActiveModuleId('__new__');
+      setTab('study');
+      showToast('请先创建你的第一个学习板块', 'err');
+      return;
+    }
+
+    setQuickBusy(autoOrganize ? 'ai' : 'save');
     try {
-      const modId = quickModuleId || modules[0]?.id;
-      if (!modId) {
-        setQuickOpen(false);
-        setActiveModuleId('__new__');
-        setTab('study');
-        showToast('请先创建你的第一个学习板块', 'err');
-        return;
-      }
       const created = await api.createLog({
         module_id: modId,
         log_date: todayDateString(),
-        title: quickTitle.trim(),
-        content: quickContent.trim(),
-        duration_minutes: 30,
-        rating: 4,
+        title: autoTitle || '未命名学习记录',
+        content: raw,
+        duration_minutes: 0,
+        rating: 0,
       });
+      let finalLog = created;
+      if (autoOrganize) {
+        try {
+          finalLog = await api.organizeLog(created.id);
+          showToast('学习记录已保留原文，AI 整理归纳完成');
+        } catch (aiErr) {
+          showToast(`原文已保存，AI 整理失败：${aiErr instanceof Error ? aiErr.message : ''}`, 'err');
+        }
+      } else {
+        showToast('学习记录已保存');
+      }
       setActiveModuleId(modId);
-      setSelectedLogId(created.id);
+      setSelectedLogId(finalLog.id);
       setTab('study');
-      showToast('学习日程已记录');
-      setQuickTitle('');
       setQuickContent('');
       setQuickOpen(false);
       refreshAll();
     } catch (e) {
       showToast(e instanceof Error ? e.message : '保存失败', 'err');
+    } finally {
+      setQuickBusy(null);
     }
   };
 
@@ -382,7 +397,7 @@ export default function App() {
 
   const navItems: Array<{ id: NavTab; label: string; short: string; icon: typeof CalendarCheck }> = [
     { id: 'today', label: '今日概览', short: '今日', icon: CalendarCheck },
-    { id: 'study', label: '学习板块', short: '学习', icon: BookOpen },
+    { id: 'study', label: '学习日志', short: '学习', icon: BookOpen },
     { id: 'ideas', label: '游戏灵感', short: '灵感', icon: Gamepad2 },
     { id: 'ai', label: 'AI 参谋', short: 'AI', icon: Sparkles },
     { id: 'settings', label: '设置与同步', short: '设置', icon: Settings },
@@ -721,20 +736,20 @@ export default function App() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 p-1 rounded-xl surface-elevated text-xs">
                 <button
-                  onClick={() => setQuickKind('idea')}
-                  className={`px-3 py-1 rounded-lg font-medium transition ${
-                    quickKind === 'idea' ? 'bg-amber-500 text-slate-950' : 'text-secondary'
-                  }`}
-                >
-                  🎮 游戏灵感闪念
-                </button>
-                <button
                   onClick={() => setQuickKind('study')}
                   className={`px-3 py-1 rounded-lg font-medium transition ${
                     quickKind === 'study' ? 'bg-indigo-500 text-white' : 'text-secondary'
                   }`}
                 >
-                  📘 学习日程日志
+                  📘 今日学习
+                </button>
+                <button
+                  onClick={() => setQuickKind('idea')}
+                  className={`px-3 py-1 rounded-lg font-medium transition ${
+                    quickKind === 'idea' ? 'bg-amber-500 text-slate-950' : 'text-secondary'
+                  }`}
+                >
+                  🎮 游戏灵感
                 </button>
               </div>
               <button onClick={() => setQuickOpen(false)} className="text-muted hover:text-primary">
@@ -774,25 +789,15 @@ export default function App() {
               </div>
             )}
 
-            {quickKind === 'study' && (
-              <input
-                autoFocus
-                value={quickTitle}
-                onChange={(e) => setQuickTitle(e.target.value)}
-                placeholder="今天学了什么主题？"
-                className="w-full px-3.5 py-2.5 rounded-xl surface-elevated text-sm font-medium focus:outline-none focus:border-indigo-500"
-              />
-            )}
-
             <textarea
-              autoFocus={quickKind === 'idea'}
-              rows={quickKind === 'idea' ? 5 : 4}
+              autoFocus
+              rows={5}
               value={quickContent}
               onChange={(e) => setQuickContent(e.target.value)}
               placeholder={
                 quickKind === 'idea'
                   ? '随手写一段你的游戏灵感（不用起标题，保留原文，可让 AI 帮你忠实整理）...'
-                  : '随手记下笔记、代码片段或数学公式（支持 Markdown & LaTeX）...'
+                  : '写下今天学了什么（不用起标题，保留原文，可让 AI 帮你自动整理归纳）...'
               }
               className="w-full px-3.5 py-2.5 rounded-xl surface-elevated text-sm focus:outline-none focus:border-indigo-500 resize-none"
             />
@@ -800,36 +805,27 @@ export default function App() {
             <div className="flex justify-end gap-2 flex-wrap">
               <button
                 onClick={() => setQuickOpen(false)}
+                disabled={quickBusy !== null}
                 className="px-4 py-2 rounded-xl surface-elevated text-xs font-medium"
               >
                 取消
               </button>
-              {quickKind === 'idea' ? (
-                <>
-                  <button
-                    onClick={() => handleQuickSubmit(false)}
-                    disabled={!quickContent.trim()}
-                    className="px-3.5 py-2 rounded-xl surface-elevated hover:border-strong text-xs font-medium disabled:opacity-50"
-                  >
-                    仅保存原文
-                  </button>
-                  <button
-                    onClick={() => handleQuickSubmit(true)}
-                    disabled={!quickContent.trim()}
-                    className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-semibold disabled:opacity-50"
-                  >
-                    保存并 AI 整理
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={() => handleQuickSubmit(false)}
-                  disabled={!quickTitle.trim()}
-                  className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-semibold disabled:opacity-50"
-                >
-                  保存并打开详情
-                </button>
-              )}
+              <button
+                onClick={() => handleQuickSubmit(false)}
+                disabled={quickBusy !== null || !quickContent.trim()}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl surface-elevated hover:border-strong text-xs font-medium disabled:opacity-50"
+              >
+                {quickBusy === 'save' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                仅保存原文
+              </button>
+              <button
+                onClick={() => handleQuickSubmit(true)}
+                disabled={quickBusy !== null || !quickContent.trim()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-semibold disabled:opacity-50"
+              >
+                {quickBusy === 'ai' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                保存并 AI 整理
+              </button>
             </div>
           </div>
         </div>

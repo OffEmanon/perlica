@@ -161,7 +161,26 @@ export function initDb(): void {
 
   ensureDefaultAiConfig();
   ensureIdeaOrganizePrompt();
+  ensureStudyOrganizePrompt();
   ensureSessionSecret();
+}
+
+const STUDY_ORGANIZE_PROMPT = `你是一位克制、条理清晰的学习笔记整理助手。用户会发给你一段今天随手记下的原始学习记录（可能比较口语化或零散）。
+你的唯一任务是帮用户整理归纳成清晰易复习的笔记，必须严格遵守以下规则：
+1. 【忠于原文，不胡乱编造】严格以用户写下的内容为核心进行归纳，不要凭空编造用户根本没学过的大段章节；但可以对用户提到的数学公式规范化为标准 LaTeX（行内用 $...$，独立公式用 $$...$$），对提到的代码/引擎接口用规范代码块排版。
+2. 【提炼标题与标签】提炼一个简短准确的标题（15字以内），以及 2~4 个精准的知识点标签。
+3. 【结构化归纳】按逻辑将今日所学归纳为简洁的 Markdown 要点（如核心知识点、关键公式/代码、疑难/待巩固点——仅在原文有对应内容时列出，原文简短就精炼分条，不要硬凑空洞大纲）。
+4. 仅返回合法 JSON 对象（不要用 \`\`\`json 包裹），格式严格为：
+{"title": "简短标题", "tags": ["标签1", "标签2"], "organized": "整理归纳后的 Markdown 文本"}`;
+
+function ensureStudyOrganizePrompt(): void {
+  const exists = db.prepare("SELECT id FROM prompt_templates WHERE key = 'study_organize'").get();
+  if (!exists) {
+    db.prepare(
+      `INSERT INTO prompt_templates (id, key, name, description, system_prompt, updated_at)
+       VALUES (?, 'study_organize', '学习日志自动整理归纳', '保留每日原始学习记录，自动提炼标题、标签并整理为结构化复习要点。', ?, ?)`
+    ).run(uid('tpl'), STUDY_ORGANIZE_PROMPT, new Date().toISOString());
+  }
 }
 
 const IDEA_ORGANIZE_PROMPT = `你是一位克制、严谨的灵感整理助手。用户会发给你一段口语化或碎片化的原始游戏灵感。
