@@ -380,7 +380,7 @@ export default function App() {
     <div className="h-[100dvh] flex flex-col md:flex-row overflow-hidden bg-[var(--bg-app)] text-[var(--text-primary)]">
       {/* DESKTOP SIDEBAR */}
       <aside className="hidden md:flex md:w-56 lg:w-60 shrink-0 flex-col border-r border-subtle bg-[var(--bg-sidebar)] p-3 justify-between">
-        <div className="space-y-4 overflow-y-auto">
+        <div className="space-y-4 overflow-y-auto overflow-x-hidden">
           {/* Brand */}
           <div className="flex items-center justify-between px-1.5 pt-0.5">
             <div className="flex items-center gap-2.5">
@@ -408,7 +408,7 @@ export default function App() {
           </button>
 
           {/* Main Nav */}
-          <nav className="space-y-0.5">
+          <nav className="space-y-0.5 pr-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = tab === item.id;

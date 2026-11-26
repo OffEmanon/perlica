@@ -361,7 +361,7 @@ export function AiHubView({
             </div>
 
             {/* History */}
-            <div className="surface rounded-xl p-4 flex-1 overflow-y-auto space-y-2 min-h-[160px]">
+            <div className="surface rounded-xl p-4 flex-1 overflow-y-auto overflow-x-hidden space-y-2 min-h-[160px]">
               <div className="text-xs font-medium text-muted">历史记录</div>
               {reviews.length === 0 ? (
                 <p className="text-xs text-muted py-4 text-center">暂无复盘</p>
@@ -440,7 +440,7 @@ export function AiHubView({
               <Plus className="w-3.5 h-3.5" /> 新建对话
             </button>
 
-            <div className="space-y-0.5 overflow-y-auto flex-1 max-h-40 lg:max-h-none">
+            <div className="space-y-0.5 overflow-y-auto overflow-x-hidden flex-1 max-h-40 lg:max-h-none">
               {conversations.map((c) => (
                 <div
                   key={c.id}

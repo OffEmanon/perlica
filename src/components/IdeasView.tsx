@@ -227,7 +227,7 @@ export function IdeasView({
             />
           </div>
 
-          <div className="space-y-2 lg:overflow-y-auto lg:pr-1 flex-1">
+          <div className="space-y-2 lg:overflow-y-auto lg:overflow-x-hidden lg:pr-1 pt-0.5 flex-1">
             {filtered.length === 0 ? (
               <div className="surface rounded-xl p-8 text-center text-sm text-muted">
                 暂无灵感
