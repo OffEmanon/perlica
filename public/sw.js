@@ -1,4 +1,4 @@
-const CACHE_NAME = 'perlica-shell-v7';
+const CACHE_NAME = 'perlica-shell-v8';
 const SHELL_ASSETS = ['./', './manifest.webmanifest', './icon.png', './icon-192.png'];
 
 self.addEventListener('install', (event) => {

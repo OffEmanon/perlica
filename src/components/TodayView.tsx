@@ -15,7 +15,7 @@ interface TodayViewProps {
   todayLogs: StudyLog[];
   recentIdeas: GameIdea[];
   onRefresh: () => void;
-  onOpenNewLog: (moduleId?: string) => void;
+  onOpenNewLog: () => void;
   onOpenNewIdea: () => void;
   onSelectLog: (log: StudyLog) => void;
   onSelectIdea: (idea: GameIdea) => void;
@@ -36,6 +36,7 @@ export function TodayView({
   onSelectModule,
 }: TodayViewProps) {
   const moduleMap = new Map(modules.map((m) => [m.id, m]));
+  const visibleCategories = modules.filter((m) => (m.log_count ?? 0) > 0);
 
   const weekLogs =
     stats?.weekLogs ??
@@ -60,7 +61,7 @@ export function TodayView({
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => onOpenNewLog()}
+            onClick={onOpenNewLog}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition shadow-sm shadow-indigo-500/25"
           >
             <Plus className="w-4 h-4" /> 记今日所学
@@ -142,37 +143,18 @@ export function TodayView({
 
           {todayLogs.length === 0 ? (
             <div className="surface rounded-2xl p-8 text-center space-y-3">
-              {modules.length === 0 ? (
-                <>
-                  <p className="text-secondary text-sm">先创建你的第一个学习板块，就可以开始每天随手记录了。</p>
-                  <button
-                    onClick={() => onSelectModule('__new__')}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-medium transition"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> 创建第一个学习板块（如虚幻引擎 / 数学分析）
-                  </button>
-                </>
-              ) : (
-                <>
-                  <p className="text-secondary text-sm">今天还没有记录学习内容，选一个板块写几句吧。</p>
-                  <div className="flex items-center justify-center gap-2 flex-wrap">
-                    {modules.map((m) => (
-                      <button
-                        key={m.id}
-                        onClick={() => onOpenNewLog(m.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl surface-elevated hover:border-strong text-xs font-medium transition"
-                      >
-                        <span>{m.icon}</span> {m.name}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
+              <p className="text-secondary text-sm">今天还没有记录学习内容，随手写几句，AI 会自动帮你分类整理。</p>
+              <button
+                onClick={onOpenNewLog}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-medium transition"
+              >
+                <Plus className="w-3.5 h-3.5" /> 记今日所学
+              </button>
             </div>
           ) : (
             <div className="space-y-3">
               {todayLogs.map((log) => {
-                const mod = moduleMap.get(log.module_id);
+                const cat = moduleMap.get(log.module_id);
                 const previewText = log.ai_feedback || log.content;
                 return (
                   <div
@@ -182,12 +164,12 @@ export function TodayView({
                   >
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex items-center gap-2 flex-wrap">
-                        {mod && (
+                        {cat && (
                           <span
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium"
-                            style={{ backgroundColor: `${mod.color}20`, color: mod.color }}
+                            style={{ backgroundColor: `${cat.color}20`, color: cat.color }}
                           >
-                            {mod.icon} {mod.name}
+                            {cat.icon} {cat.name}
                           </span>
                         )}
                         {log.ai_feedback && (
@@ -227,9 +209,9 @@ export function TodayView({
           )}
         </div>
 
-        {/* Right Col: Heatmap + Modules + Recent Ideas */}
+        {/* Right Col: Heatmap + Auto Categories + Recent Ideas */}
         <div className="space-y-4">
-          {/* 28-Day Heatmap (by log count) */}
+          {/* 28-Day Heatmap */}
           <div className="surface rounded-2xl p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold">近 28 天学习打卡</h3>
@@ -246,41 +228,36 @@ export function TodayView({
             </div>
           </div>
 
-          {/* Module Quick Cards */}
+          {/* AI Auto Categories */}
           <div className="surface rounded-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">学习板块</h3>
-              <button
-                onClick={() => onSelectModule('__new__')}
-                className="text-xs text-indigo-400 hover:underline"
-              >
-                + 新建
-              </button>
+              <h3 className="text-sm font-semibold">AI 自动分类</h3>
+              <span className="text-[11px] text-muted">按记录自动归类</span>
             </div>
-            {modules.length === 0 ? (
-              <p className="text-xs text-muted py-2">暂无学习板块</p>
+            {visibleCategories.length === 0 ? (
+              <p className="text-xs text-muted py-2">写下学习记录后，AI 会自动帮你归纳分类。</p>
             ) : (
               <div className="space-y-2">
-                {modules.map((m) => {
-                  const total = m.log_count ?? 0;
-                  const maxCount = Math.max(1, ...modules.map((x) => x.log_count ?? 0));
-                  const pct = total > 0 ? Math.max(10, Math.round((total / maxCount) * 100)) : 0;
+                {visibleCategories.map((c) => {
+                  const total = c.log_count ?? 0;
+                  const maxCount = Math.max(1, ...visibleCategories.map((x) => x.log_count ?? 0));
+                  const pct = Math.max(10, Math.round((total / maxCount) * 100));
                   return (
                     <button
-                      key={m.id}
-                      onClick={() => onSelectModule(m.id)}
+                      key={c.id}
+                      onClick={() => onSelectModule(c.id)}
                       className="w-full text-left p-2.5 rounded-xl surface-elevated hover:border-strong transition"
                     >
                       <div className="flex items-center justify-between text-sm">
                         <span className="font-medium flex items-center gap-1.5">
-                          <span>{m.icon}</span> {m.name}
+                          <span>{c.icon}</span> {c.name}
                         </span>
                         <span className="text-xs text-muted">{total} 条</span>
                       </div>
                       <div className="h-1.5 rounded-full bg-white/[0.06] mt-2 overflow-hidden">
                         <div
                           className="h-full rounded-full transition-all"
-                          style={{ width: `${pct}%`, backgroundColor: m.color }}
+                          style={{ width: `${pct}%`, backgroundColor: c.color }}
                         />
                       </div>
                     </button>

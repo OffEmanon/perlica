@@ -117,6 +117,8 @@ export function AiHubView({
     }
   }, [autoTriggerDaily, onAutoTriggerConsumed]);
 
+  const visibleCategories = modules.filter((m) => (m.log_count ?? 0) > 0);
+
   const applyPresetScope = (scope: 'daily' | 'weekly' | 'module') => {
     setReviewScope(scope);
     if (scope === 'daily') {
@@ -130,7 +132,7 @@ export function AiHubView({
     } else if (scope === 'module') {
       setDateFrom(daysAgoString(29));
       setDateTo(todayDateString());
-      if (!reviewModuleId && modules[0]) setReviewModuleId(modules[0].id);
+      if (!reviewModuleId && visibleCategories[0]) setReviewModuleId(visibleCategories[0].id);
     }
   };
 
@@ -326,7 +328,7 @@ export function AiHubView({
                       : 'surface-elevated text-secondary'
                   }`}
                 >
-                  板块专项
+                  分类专项
                 </button>
               </div>
 
@@ -352,16 +354,16 @@ export function AiHubView({
               </div>
 
               <label className="surface-elevated rounded-xl px-2.5 py-1.5 block text-xs">
-                <span className="text-[10px] text-muted block">筛选学习板块</span>
+                <span className="text-[10px] text-muted block">筛选自动分类</span>
                 <select
                   value={reviewModuleId}
                   onChange={(e) => setReviewModuleId(e.target.value)}
                   className="bg-transparent w-full focus:outline-none mt-0.5"
                 >
                   <option value="" className="bg-[#141720]">
-                    全部板块汇总
+                    全部分类汇总
                   </option>
-                  {modules.map((m) => (
+                  {visibleCategories.map((m) => (
                     <option key={m.id} value={m.id} className="bg-[#141720]">
                       {m.icon} {m.name}
                     </option>
@@ -515,14 +517,14 @@ export function AiHubView({
                     ['all', '全部记录'],
                     ['study', '仅学习日志'],
                     ['ideas', '仅游戏灵感'],
-                    ['module', '指定板块'],
+                    ['module', '指定分类'],
                   ] as const
                 ).map(([k, label]) => (
                   <button
                     key={k}
                     onClick={() => {
                       setChatMode(k);
-                      if (k === 'module' && !chatModuleId && modules[0]) setChatModuleId(modules[0].id);
+                      if (k === 'module' && !chatModuleId && visibleCategories[0]) setChatModuleId(visibleCategories[0].id);
                     }}
                     className={`px-2.5 py-1 rounded-lg transition ${
                       chatMode === k ? 'bg-indigo-500 text-white' : 'surface text-secondary'
@@ -537,7 +539,7 @@ export function AiHubView({
                     onChange={(e) => setChatModuleId(e.target.value)}
                     className="px-2 py-1 rounded-lg surface text-primary focus:outline-none"
                   >
-                    {modules.map((m) => (
+                    {visibleCategories.map((m) => (
                       <option key={m.id} value={m.id} className="bg-[#141720]">
                         {m.icon} {m.name}
                       </option>

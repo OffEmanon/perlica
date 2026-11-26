@@ -3,8 +3,6 @@ import {
   ArrowLeft,
   BookOpen,
   Calendar,
-  Edit3,
-  FolderPlus,
   Loader2,
   Save,
   Search,
@@ -27,9 +25,6 @@ interface StudyViewProps {
   onToast: (msg: string, type?: 'ok' | 'err') => void;
 }
 
-const PRESET_ICONS = ['🎮', '∫', '🧠', '⚙️', '🎨', '📐', '💻', '📚', '🔬', '🎵', '🚀', '🧩'];
-const PRESET_COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6'];
-
 function deriveShortTitle(raw: string): string {
   const firstLine = raw.trim().split(/\r?\n/)[0] || '未命名学习记录';
   return firstLine.length > 22 ? `${firstLine.slice(0, 22)}...` : firstLine;
@@ -45,10 +40,9 @@ export function StudyView({
   onRefresh,
   onToast,
 }: StudyViewProps) {
-  // Quick daily write composer state
+  // Ultra-simple daily write composer
   const [quickDraft, setQuickDraft] = useState('');
   const [draftDate, setDraftDate] = useState(todayDateString());
-  const [draftModuleId, setDraftModuleId] = useState('');
   const [creating, setCreating] = useState<'save' | 'ai' | null>(null);
 
   // List & detail state
@@ -59,42 +53,27 @@ export function StudyView({
   const [organizing, setOrganizing] = useState(false);
   const [newTag, setNewTag] = useState('');
 
-  // Minimal module modal (name + icon + color only)
-  const [moduleModal, setModuleModal] = useState<{ open: boolean; editing: StudyModule | null }>({
-    open: false,
-    editing: null,
-  });
-  const [modForm, setModForm] = useState({
-    name: '',
-    icon: '📘',
-    color: '#6366f1',
-  });
-
   const moduleMap = new Map(modules.map((m) => [m.id, m]));
+  // Only show auto-generated categories that actually contain logs
+  const visibleCategories = modules.filter((m) => (m.log_count ?? 0) > 0);
 
   const updateEditing = (next: StudyLog) => {
     setEditing(next);
     setIsDirty(true);
   };
 
-  // Keep draftModuleId synced with activeModuleId or first module
+  // Reset filter to 'all' if selected category no longer has logs
   useEffect(() => {
-    if (activeModuleId && activeModuleId !== 'all' && activeModuleId !== '__new__') {
-      setDraftModuleId(activeModuleId);
-    } else if (modules.length > 0 && !modules.some((m) => m.id === draftModuleId)) {
-      setDraftModuleId(modules[0].id);
-    } else if (modules.length === 0) {
-      setDraftModuleId('');
-    }
-  }, [activeModuleId, modules, draftModuleId]);
-
-  useEffect(() => {
-    if (activeModuleId === '__new__') {
-      setModForm({ name: '', icon: '📘', color: '#6366f1' });
-      setModuleModal({ open: true, editing: null });
+    if (
+      activeModuleId !== 'all' &&
+      visibleCategories.length > 0 &&
+      !visibleCategories.some((c) => c.id === activeModuleId)
+    ) {
+      onSelectModule('all');
+    } else if (activeModuleId !== 'all' && visibleCategories.length === 0) {
       onSelectModule('all');
     }
-  }, [activeModuleId, onSelectModule]);
+  }, [activeModuleId, visibleCategories, onSelectModule]);
 
   useEffect(() => {
     if (!selectedLogId) return;
@@ -116,10 +95,12 @@ export function StudyView({
     if (activeModuleId && activeModuleId !== 'all' && l.module_id !== activeModuleId) return false;
     if (search.trim()) {
       const q = search.trim().toLowerCase();
+      const catName = moduleMap.get(l.module_id)?.name.toLowerCase() || '';
       return (
         l.title.toLowerCase().includes(q) ||
         l.content.toLowerCase().includes(q) ||
         l.ai_feedback.toLowerCase().includes(q) ||
+        catName.includes(q) ||
         l.tags.some((t) => t.toLowerCase().includes(q))
       );
     }
@@ -129,17 +110,10 @@ export function StudyView({
   const handleQuickCreate = async (withAi: boolean) => {
     const raw = quickDraft.trim();
     if (!raw) return;
-    const targetModId = draftModuleId || modules[0]?.id;
-    if (!targetModId) {
-      onToast('请先创建一个学习板块', 'err');
-      openCreateModule();
-      return;
-    }
 
     setCreating(withAi ? 'ai' : 'save');
     try {
       const created = await api.createLog({
-        module_id: targetModId,
         log_date: draftDate || todayDateString(),
         title: deriveShortTitle(raw),
         content: raw,
@@ -153,15 +127,15 @@ export function StudyView({
       if (withAi) {
         try {
           finalLog = await api.organizeLog(created.id);
-          onToast('已保留原始记录，AI 整理归纳完成');
+          onToast('已保留原文，AI 自动分类并整理完成');
         } catch (aiErr) {
           onToast(
-            `原始记录已保存，但 AI 整理失败：${aiErr instanceof Error ? aiErr.message : '请检查模型配置'}`,
+            `原始记录已保存，但 AI 分类整理失败：${aiErr instanceof Error ? aiErr.message : '请检查模型配置'}`,
             'err'
           );
         }
       } else {
-        onToast('学习记录已保存');
+        onToast('原始记录已保存');
       }
       onRefresh();
       onSelectLogId(finalLog.id);
@@ -212,7 +186,7 @@ export function StudyView({
       setEditing(updated);
       setIsDirty(false);
       onRefresh();
-      onToast('AI 整理归纳完成（原文已完整保留）');
+      onToast('AI 自动分类与整理完成（原文已保留）');
     } catch (e) {
       onToast(e instanceof Error ? e.message : 'AI 整理失败', 'err');
     } finally {
@@ -241,52 +215,7 @@ export function StudyView({
     setNewTag('');
   };
 
-  // Module modal handlers
-  const openCreateModule = () => {
-    setModForm({ name: '', icon: '📘', color: '#6366f1' });
-    setModuleModal({ open: true, editing: null });
-  };
-
-  const openEditModule = (mod: StudyModule) => {
-    setModForm({
-      name: mod.name,
-      icon: mod.icon,
-      color: mod.color,
-    });
-    setModuleModal({ open: true, editing: mod });
-  };
-
-  const saveModule = async () => {
-    if (!modForm.name.trim()) return;
-    try {
-      if (moduleModal.editing) {
-        await api.updateModule(moduleModal.editing.id, modForm);
-        onToast('板块已更新');
-      } else {
-        const created = await api.createModule(modForm);
-        onSelectModule(created.id);
-        setDraftModuleId(created.id);
-        onToast('新板块已创建');
-      }
-      setModuleModal({ open: false, editing: null });
-      onRefresh();
-    } catch (e) {
-      onToast(e instanceof Error ? e.message : '操作失败', 'err');
-    }
-  };
-
-  const deleteModule = async (mod: StudyModule) => {
-    if (!confirm(`确定删除板块「${mod.name}」吗？该板块下的学习记录也会一并删除。`)) return;
-    await api.deleteModule(mod.id);
-    if (activeModuleId === mod.id) onSelectModule('all');
-    if (editing?.module_id === mod.id) {
-      setEditing(null);
-      onSelectLogId(null);
-    }
-    setModuleModal({ open: false, editing: null });
-    onRefresh();
-    onToast('板块已删除');
-  };
+  const editingCategory = editing ? moduleMap.get(editing.module_id) : null;
 
   return (
     <div className="lg:h-full flex flex-col gap-4 max-w-6xl mx-auto min-w-0">
@@ -296,140 +225,96 @@ export function StudyView({
           <BookOpen className="w-5 h-5 text-indigo-400" /> 学习日志
         </h1>
         <p className="text-xs text-muted mt-0.5">
-          每天随手写下学了什么，AI 自动整理归纳要点、提炼标题与标签，保留原始记录
+          直接写下今天学了什么，AI 自动为你分类、整理归纳要点与标签，原汁原味保留原始记录
         </p>
       </div>
 
-      {/* Top Module Filter Strip */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
-        <button
-          onClick={() => onSelectModule('all')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition shrink-0 ${
-            activeModuleId === 'all'
-              ? 'bg-indigo-500 text-white'
-              : 'surface text-secondary hover:text-primary'
-          }`}
-        >
-          全部 ({logs.length})
-        </button>
-        {modules.map((m) => (
-          <div key={m.id} className="inline-flex items-center shrink-0">
+      {/* Zero-Setup Daily Write Box (always ready to type; hidden on mobile while viewing detail) */}
+      <div className={`surface rounded-2xl p-3.5 sm:p-4 space-y-3 ${editing ? 'hidden lg:block' : 'block'}`}>
+        <textarea
+          rows={3}
+          value={quickDraft}
+          onChange={(e) => setQuickDraft(e.target.value)}
+          placeholder="今天学了什么？随手写下学到的知识点、公式、代码或踩过的坑（不用选分类、不用起标题，AI 会自动帮你归类整理）..."
+          className="w-full bg-transparent text-sm leading-relaxed placeholder:text-muted focus:outline-none resize-none"
+        />
+
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-subtle flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg surface-elevated text-xs text-secondary shrink-0">
+              <Calendar className="w-3.5 h-3.5 text-muted" />
+              <input
+                type="date"
+                value={draftDate}
+                onChange={(e) => setDraftDate(e.target.value)}
+                className="bg-transparent text-primary focus:outline-none text-xs"
+              />
+            </label>
+            <span className="text-[11px] text-muted hidden sm:inline">
+              AI 根据内容自动分类并整理（支持 LaTeX 与代码高亮）
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 ml-auto">
             <button
-              onClick={() => onSelectModule(m.id)}
-              className={`px-3 py-1.5 rounded-l-xl text-xs font-medium whitespace-nowrap transition flex items-center gap-1.5 border ${
-                activeModuleId === m.id
+              onClick={() => handleQuickCreate(false)}
+              disabled={creating !== null || !quickDraft.trim()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl surface-elevated hover:border-strong text-xs font-medium transition disabled:opacity-40"
+            >
+              {creating === 'save' ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Save className="w-3.5 h-3.5" />
+              )}
+              仅保存原文
+            </button>
+            <button
+              onClick={() => handleQuickCreate(true)}
+              disabled={creating !== null || !quickDraft.trim()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-semibold transition disabled:opacity-40"
+            >
+              {creating === 'ai' ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="w-3.5 h-3.5" />
+              )}
+              保存并 AI 自动分类整理
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Auto-Generated Category Filter Strip (appears automatically once logs exist) */}
+      {visibleCategories.length > 0 && (
+        <div className={`flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full ${editing ? 'hidden lg:flex' : 'flex'}`}>
+          <button
+            onClick={() => onSelectModule('all')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition shrink-0 ${
+              activeModuleId === 'all'
+                ? 'bg-indigo-500 text-white'
+                : 'surface text-secondary hover:text-primary'
+            }`}
+          >
+            全部 ({logs.length})
+          </button>
+          {visibleCategories.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => onSelectModule(cat.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition flex items-center gap-1.5 border shrink-0 ${
+                activeModuleId === cat.id
                   ? 'text-white border-transparent'
                   : 'surface text-secondary hover:text-primary'
               }`}
-              style={activeModuleId === m.id ? { backgroundColor: m.color } : undefined}
+              style={activeModuleId === cat.id ? { backgroundColor: cat.color } : undefined}
             >
-              <span>{m.icon}</span>
-              <span>{m.name}</span>
-              <span className="opacity-70 text-[11px]">({m.log_count ?? 0})</span>
+              <span>{cat.icon}</span>
+              <span>{cat.name}</span>
+              <span className="opacity-70 text-[11px]">({cat.log_count ?? 0})</span>
             </button>
-            <button
-              title="编辑板块"
-              onClick={() => openEditModule(m)}
-              className="px-1.5 py-1.5 rounded-r-xl surface border-l-0 text-muted hover:text-primary transition"
-            >
-              <Edit3 className="w-3 h-3" />
-            </button>
-          </div>
-        ))}
-        <button
-          onClick={openCreateModule}
-          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-dashed border-strong text-xs text-secondary hover:text-primary hover:border-indigo-400 whitespace-nowrap transition shrink-0"
-        >
-          <FolderPlus className="w-3.5 h-3.5" /> 新建板块
-        </button>
-      </div>
-
-      {/* Ultra-Simple Daily Study Composer (hidden on mobile while viewing detail) */}
-      <div className={`surface rounded-2xl p-3.5 sm:p-4 space-y-3 ${editing ? 'hidden lg:block' : 'block'}`}>
-        {modules.length === 0 ? (
-          <div className="py-3 text-center space-y-2.5">
-            <p className="text-xs text-secondary">先建一个学习板块（比如 虚幻引擎 UE5、数学分析），就可以开始每天记录了。</p>
-            <button
-              onClick={openCreateModule}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-semibold transition"
-            >
-              <FolderPlus className="w-3.5 h-3.5" /> 创建第一个学习板块
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* Compact Module + Date Row */}
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {modules.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setDraftModuleId(m.id)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
-                      draftModuleId === m.id
-                        ? 'text-white border-transparent'
-                        : 'surface-elevated text-secondary hover:text-primary'
-                    }`}
-                    style={draftModuleId === m.id ? { backgroundColor: m.color } : undefined}
-                  >
-                    {m.icon} {m.name}
-                  </button>
-                ))}
-              </div>
-              <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg surface-elevated text-xs text-secondary shrink-0">
-                <Calendar className="w-3.5 h-3.5 text-muted" />
-                <input
-                  type="date"
-                  value={draftDate}
-                  onChange={(e) => setDraftDate(e.target.value)}
-                  className="bg-transparent text-primary focus:outline-none text-xs"
-                />
-              </label>
-            </div>
-
-            <textarea
-              rows={3}
-              value={quickDraft}
-              onChange={(e) => setQuickDraft(e.target.value)}
-              placeholder="今天学了什么？随手写下学到的知识点、公式、代码或踩过的坑（不用起标题也不用管排版）..."
-              className="w-full bg-transparent text-sm leading-relaxed placeholder:text-muted focus:outline-none resize-none"
-            />
-
-            <div className="flex items-center justify-between gap-2 pt-2 border-t border-subtle flex-wrap">
-              <span className="text-[11px] text-muted">
-                保留原始记录，AI 自动整理归纳（支持 LaTeX 公式与代码高亮）
-              </span>
-              <div className="flex items-center gap-2 ml-auto">
-                <button
-                  onClick={() => handleQuickCreate(false)}
-                  disabled={creating !== null || !quickDraft.trim()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl surface-elevated hover:border-strong text-xs font-medium transition disabled:opacity-40"
-                >
-                  {creating === 'save' ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Save className="w-3.5 h-3.5" />
-                  )}
-                  仅保存原文
-                </button>
-                <button
-                  onClick={() => handleQuickCreate(true)}
-                  disabled={creating !== null || !quickDraft.trim()}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-semibold transition disabled:opacity-40"
-                >
-                  {creating === 'ai' ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-3.5 h-3.5" />
-                  )}
-                  保存并 AI 整理归纳
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Main Split View: Clean List + Clean Two-Section Detail */}
       <div className="flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:flex-1 lg:min-h-0">
@@ -444,7 +329,7 @@ export function StudyView({
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索学习记录、AI归纳或标签..."
+              placeholder="搜索学习记录、分类、AI归纳或标签..."
               className="w-full pl-9 pr-3 py-2 rounded-xl surface text-xs focus:outline-none focus:border-indigo-500"
             />
           </div>
@@ -452,11 +337,11 @@ export function StudyView({
           <div className="space-y-2 lg:overflow-y-auto lg:pr-1 flex-1">
             {filteredLogs.length === 0 ? (
               <div className="surface rounded-2xl p-8 text-center text-xs text-muted">
-                还没有学习记录，在上方输入框写下今天学了什么吧。
+                还没有学习记录，在上方输入框随手写下今天学了什么吧。
               </div>
             ) : (
               filteredLogs.map((log) => {
-                const mod = moduleMap.get(log.module_id);
+                const cat = moduleMap.get(log.module_id);
                 const selected = editing?.id === log.id;
                 return (
                   <button
@@ -474,12 +359,12 @@ export function StudyView({
                   >
                     <div className="flex items-center justify-between gap-2 text-[11px] text-muted">
                       <span>
-                        {mod && (
+                        {cat && (
                           <span
                             className="px-1.5 py-0.5 rounded font-medium"
-                            style={{ backgroundColor: `${mod.color}20`, color: mod.color }}
+                            style={{ backgroundColor: `${cat.color}20`, color: cat.color }}
                           >
-                            {mod.icon} {mod.name}
+                            {cat.icon} {cat.name}
                           </span>
                         )}
                       </span>
@@ -554,7 +439,7 @@ export function StudyView({
                     ) : (
                       <Sparkles className="w-3.5 h-3.5" />
                     )}
-                    {editing.ai_feedback ? 'AI 重新整理' : 'AI 整理归纳'}
+                    {editing.ai_feedback ? 'AI 重新分类整理' : 'AI 自动分类整理'}
                   </button>
                   <button
                     onClick={handleSave}
@@ -582,19 +467,31 @@ export function StudyView({
                 className="w-full text-lg font-bold bg-transparent focus:outline-none"
               />
 
-              {/* Compact Inline Meta: Module + Date + Tags */}
+              {/* Compact Inline Meta: Auto Category + Date + Tags */}
               <div className="flex items-center gap-2 flex-wrap text-xs">
-                <select
-                  value={editing.module_id}
-                  onChange={(e) => updateEditing({ ...editing, module_id: e.target.value })}
-                  className="px-2.5 py-1 rounded-lg surface-elevated text-primary font-medium focus:outline-none"
-                >
-                  {modules.map((m) => (
-                    <option key={m.id} value={m.id} className="bg-[#141720] text-white">
-                      {m.icon} {m.name}
-                    </option>
-                  ))}
-                </select>
+                {visibleCategories.length > 1 ? (
+                  <select
+                    value={editing.module_id}
+                    onChange={(e) => updateEditing({ ...editing, module_id: e.target.value })}
+                    title="AI 自动分类（可微调）"
+                    className="px-2.5 py-1 rounded-lg surface-elevated text-primary font-medium focus:outline-none"
+                  >
+                    {visibleCategories.map((c) => (
+                      <option key={c.id} value={c.id} className="bg-[#141720] text-white">
+                        {c.icon} {c.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  editingCategory && (
+                    <span
+                      className="px-2.5 py-1 rounded-lg font-medium"
+                      style={{ backgroundColor: `${editingCategory.color}20`, color: editingCategory.color }}
+                    >
+                      {editingCategory.icon} {editingCategory.name}
+                    </span>
+                  )
+                )}
 
                 <input
                   type="date"
@@ -653,14 +550,14 @@ export function StudyView({
                   <span className="font-semibold text-indigo-400 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" /> AI 整理归纳
                   </span>
-                  <span className="text-[11px] text-muted">忠于原文 · 支持公式与代码高亮</span>
+                  <span className="text-[11px] text-muted">自动分类 · 忠于原文 · 支持公式与代码高亮</span>
                 </div>
                 {editing.ai_feedback ? (
                   <MarkdownView content={editing.ai_feedback} />
                 ) : (
                   <div className="py-4 text-center space-y-2">
                     <p className="text-xs text-muted">
-                      还没有整理，点击按钮让 AI 把今天学的内容归纳成清晰的复习笔记。
+                      还没有整理，点击按钮让 AI 自动分类并归纳成清晰的复习笔记。
                     </p>
                     <button
                       onClick={handleOrganize}
@@ -672,7 +569,7 @@ export function StudyView({
                       ) : (
                         <Sparkles className="w-3.5 h-3.5" />
                       )}
-                      AI 整理归纳这条记录
+                      AI 自动分类并整理
                     </button>
                   </div>
                 )}
@@ -681,104 +578,6 @@ export function StudyView({
           )}
         </div>
       </div>
-
-      {/* Minimal Create / Edit Module Modal */}
-      {moduleModal.open && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="surface rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold">
-                {moduleModal.editing ? '编辑学习板块' : '新建学习板块'}
-              </h3>
-              <button
-                onClick={() => setModuleModal({ open: false, editing: null })}
-                className="text-muted hover:text-primary"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3.5 text-sm">
-              <div>
-                <label className="text-xs text-muted block mb-1">板块名称 *</label>
-                <input
-                  autoFocus
-                  value={modForm.name}
-                  onChange={(e) => setModForm({ ...modForm, name: e.target.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') saveModule();
-                  }}
-                  placeholder="例如：虚幻引擎 UE5、数学分析"
-                  className="w-full px-3 py-2 rounded-xl surface-elevated focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-muted block mb-1">图标</label>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {PRESET_ICONS.map((ic) => (
-                    <button
-                      key={ic}
-                      type="button"
-                      onClick={() => setModForm({ ...modForm, icon: ic })}
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-base border transition ${
-                        modForm.icon === ic ? 'border-indigo-400 bg-indigo-500/20' : 'border-subtle surface-elevated'
-                      }`}
-                    >
-                      {ic}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs text-muted block mb-1">主题色</label>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {PRESET_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setModForm({ ...modForm, color: c })}
-                      className={`w-6 h-6 rounded-full transition ${
-                        modForm.color === c ? 'ring-2 ring-white ring-offset-2 ring-offset-[#141720]' : ''
-                      }`}
-                      style={{ backgroundColor: c }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-2">
-              {moduleModal.editing ? (
-                <button
-                  onClick={() => deleteModule(moduleModal.editing!)}
-                  className="text-xs text-rose-400 hover:underline"
-                >
-                  删除该板块
-                </button>
-              ) : (
-                <span />
-              )}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setModuleModal({ open: false, editing: null })}
-                  className="px-3.5 py-2 rounded-xl surface-elevated text-xs font-medium"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={saveModule}
-                  disabled={!modForm.name.trim()}
-                  className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-medium disabled:opacity-40"
-                >
-                  保存
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

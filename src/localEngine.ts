@@ -113,15 +113,16 @@ function defaultPrompts(): PromptTemplate[] {
     {
       id: 'tpl_study_org',
       key: 'study_organize',
-      name: '学习日志自动整理归纳',
-      description: '保留每日原始学习记录，自动提炼标题、标签并整理为结构化复习要点。',
-      system_prompt: `你是一位克制、条理清晰的学习笔记整理助手。用户会发给你一段今天随手记下的原始学习记录（可能比较口语化或零散）。
-你的唯一任务是帮用户整理归纳成清晰易复习的笔记，必须严格遵守以下规则：
-1. 【忠于原文，不胡乱编造】严格以用户写下的内容为核心进行归纳，不要凭空编造用户根本没学过的大段章节；但可以对用户提到的数学公式规范化为标准 LaTeX（行内用 $...$，独立公式用 $$...$$），对提到的代码/引擎接口用规范代码块排版。
-2. 【提炼标题与标签】提炼一个简短准确的标题（15字以内），以及 2~4 个精准的知识点标签。
-3. 【结构化归纳】按逻辑将今日所学归纳为简洁的 Markdown 要点（如核心知识点、关键公式/代码、疑难/待巩固点——仅在原文有对应内容时列出，原文简短就精炼分条，不要硬凑空洞大纲）。
-4. 仅返回合法 JSON 对象（不要用 \`\`\`json 包裹），格式严格为：
-{"title": "简短标题", "tags": ["标签1", "标签2"], "organized": "整理归纳后的 Markdown 文本"}`,
+      name: '学习日志自动分类与整理',
+      description: '根据记录内容自动归类，并保留原文整理为结构化复习要点。',
+      system_prompt: `你是一位克制、条理清晰的学习笔记整理与分类助手。用户会发给你一段今天随手记下的原始学习记录（可能比较口语化或零散）。
+你的任务是帮用户自动分类并整理归纳成清晰易复习的笔记，必须严格遵守以下规则：
+1. 【自动分类】根据学习内容判断所属学科或领域分类（2~8字，简洁准确，如：虚幻引擎 UE5、数学分析、C++、计算机图形学、算法等）。如果消息中提供了「已有分类」，且内容明显属于其中某一类，请**优先复用完全一致的已有分类名称**，避免产生重复分类；同时给出一个贴切的单个 Emoji 图标。
+2. 【忠于原文，不胡乱编造】严格以用户写下的内容为核心进行归纳，不要凭空编造用户根本没学过的大段章节；但可以对用户提到的数学公式规范化为标准 LaTeX（行内用 $...$，独立公式用 $$...$$），对提到的代码/引擎接口用规范代码块排版。
+3. 【提炼标题与标签】提炼一个简短准确的标题（15字以内），以及 2~4 个精准的知识点标签。
+4. 【结构化归纳】按逻辑将今日所学归纳为简洁的 Markdown 要点（仅在原文有对应内容时分条，原文简短就精炼分条，不要硬凑空洞大纲）。
+5. 仅返回合法 JSON 对象（不要用 \`\`\`json 包裹），格式严格为：
+{"category": "分类名称", "icon": "📘", "title": "简短标题", "tags": ["标签1", "标签2"], "organized": "整理归纳后的 Markdown 文本"}`,
       updated_at: now,
     },
     {
@@ -228,9 +229,22 @@ function loadState(): LocalDbState {
       const orgTpl = base.prompt_templates.find((t) => t.key === 'idea_organize');
       if (orgTpl) mergedPrompts.unshift(orgTpl);
     }
-    if (!mergedPrompts.some((t) => t.key === 'study_organize')) {
-      const studyTpl = base.prompt_templates.find((t) => t.key === 'study_organize');
-      if (studyTpl) mergedPrompts.unshift(studyTpl);
+    const studyTplDefault = base.prompt_templates.find((t) => t.key === 'study_organize');
+    const existingStudyIdx = mergedPrompts.findIndex((t) => t.key === 'study_organize');
+    if (existingStudyIdx < 0 && studyTplDefault) {
+      mergedPrompts.unshift(studyTplDefault);
+    } else if (
+      existingStudyIdx >= 0 &&
+      studyTplDefault &&
+      !mergedPrompts[existingStudyIdx].system_prompt.includes('"category"')
+    ) {
+      mergedPrompts[existingStudyIdx] = {
+        ...mergedPrompts[existingStudyIdx],
+        name: studyTplDefault.name,
+        description: studyTplDefault.description,
+        system_prompt: studyTplDefault.system_prompt,
+        updated_at: new Date().toISOString(),
+      };
     }
     return {
       ...base,
@@ -259,6 +273,66 @@ function scheduleAutoSync(): void {
     autoSyncTimer = null;
     localEngine.syncGithubNow().catch(() => {});
   }, 1500);
+}
+
+const AUTO_CATEGORY_COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316'];
+
+function pickLocalCategoryIcon(name: string, aiIcon?: string): string {
+  const cleanAi = (aiIcon || '').trim();
+  if (cleanAi && cleanAi.length <= 4 && !/[a-zA-Z0-9]/.test(cleanAi)) return cleanAi;
+  const n = name.toLowerCase();
+  if (/ue|unreal|虚幻|unity|godot|游戏|game/.test(n)) return '🎮';
+  if (/数|微积分|线代|概率|代数|几何|拓扑|math/.test(n)) return '∫';
+  if (/图形|渲染|shader|opengl|vulkan|directx|3d/.test(n)) return '🎨';
+  if (/算法|数据结构|leetcode|刷题/.test(n)) return '🧩';
+  if (/c\+\+|cpp|rust|python|java|ts|js|代码|编程|架构|系统|网络|linux/.test(n)) return '💻';
+  if (/ai|机器学习|深度学习|llm|神经网络/.test(n)) return '🧠';
+  if (/物理|力学|光学/.test(n)) return '🔬';
+  if (/英|日|语|外语/.test(n)) return '🌐';
+  return '📘';
+}
+
+function ensureLocalUncategorized(st: LocalDbState): string {
+  const id = 'mod_uncategorized';
+  if (!st.modules.some((m) => m.id === id)) {
+    st.modules.push({
+      id,
+      name: '未分类',
+      icon: '📝',
+      color: '#64748b',
+      description: '',
+      goal: '',
+      sort_order: 999,
+      archived: 0,
+      created_at: new Date().toISOString(),
+    });
+  }
+  return id;
+}
+
+function findOrCreateLocalAutoCategory(st: LocalDbState, categoryName: string, aiIcon?: string): StudyModule {
+  const trimmed = categoryName.trim().slice(0, 20);
+  if (!trimmed || trimmed === '未分类') {
+    const id = ensureLocalUncategorized(st);
+    return st.modules.find((m) => m.id === id)!;
+  }
+  const exact = st.modules.find((m) => !m.archived && m.name.trim().toLowerCase() === trimmed.toLowerCase());
+  if (exact) return exact;
+
+  const existingRealCount = st.modules.filter((m) => !m.archived && m.id !== 'mod_uncategorized').length;
+  const created: StudyModule = {
+    id: uid('mod'),
+    name: trimmed,
+    icon: pickLocalCategoryIcon(trimmed, aiIcon),
+    color: AUTO_CATEGORY_COLORS[existingRealCount % AUTO_CATEGORY_COLORS.length],
+    description: '',
+    goal: '',
+    sort_order: existingRealCount,
+    archived: 0,
+    created_at: new Date().toISOString(),
+  };
+  st.modules.push(created);
+  return created;
 }
 
 function recordDeletion(state: LocalDbState, entityType: string, entityId: string): void {
@@ -1020,12 +1094,16 @@ export const localEngine = {
   createLog: async (body: Partial<StudyLog>): Promise<StudyLog> => {
     const st = loadState();
     const now = new Date().toISOString();
+    let resolvedModuleId = String(body.module_id || '').trim();
+    if (!resolvedModuleId || !st.modules.some((m) => m.id === resolvedModuleId)) {
+      resolvedModuleId = ensureLocalUncategorized(st);
+    }
     const rawContent = body.content || '';
     const firstLine = rawContent.trim().split(/\r?\n/)[0] || '';
     const fallbackTitle = firstLine.length > 22 ? `${firstLine.slice(0, 22)}...` : firstLine;
     const created: StudyLog = {
       id: uid('log'),
-      module_id: String(body.module_id || ''),
+      module_id: resolvedModuleId,
       log_date: body.log_date || todayStr(),
       title: String(body.title || '').trim() || fallbackTitle || '未命名学习记录',
       content: rawContent,
@@ -1264,8 +1342,15 @@ export const localEngine = {
     if (!rawText) throw new Error('请先写下今天学了什么');
 
     const provider = getProvider(st, provider_id);
-    const mod = st.modules.find((m) => m.id === log.module_id);
+    const existingCats = st.modules
+      .filter((m) => !m.archived && m.id !== 'mod_uncategorized' && st.study_logs.some((l) => l.module_id === m.id))
+      .map((m) => m.name);
+
     const tpl = st.prompt_templates.find((t) => t.key === 'study_organize');
+    const categoryHint = existingCats.length
+      ? `已有自动分类（如属于同类请优先复用完全一致的名称）：${existingCats.join('、')}`
+      : '当前暂无已有分类，请根据内容提炼一个简洁准确的分类名称（如：虚幻引擎 UE5、数学分析、C++ 等）';
+
     const raw = await callBrowserLlm(
       provider,
       [
@@ -1273,16 +1358,17 @@ export const localEngine = {
           role: 'system',
           content:
             tpl?.system_prompt ||
-            '请将用户的每日学习记录整理归纳为清晰的 Markdown 笔记，忠于原文不胡乱编造，仅返回 JSON: {"title":"","tags":[],"organized":""}',
+            '请根据内容自动分类，并将用户的每日学习记录整理归纳为清晰的 Markdown 笔记，仅返回 JSON: {"category":"","icon":"📘","title":"","tags":[],"organized":""}',
         },
         {
           role: 'user',
-          content: `所属学习板块：${mod?.name || '学习'}\n学习日期：${log.log_date}\n\n以下是我今天写下的原始学习记录，请帮我整理归纳：\n\n${rawText}`,
+          content: `学习日期：${log.log_date}\n${categoryHint}\n\n以下是我今天写下的原始学习记录，请自动分类并整理归纳：\n\n${rawText}`,
         },
       ],
       { temperature: 0.25 }
     );
 
+    let nextModuleId = log.module_id;
     let nextTitle = log.title;
     let nextTags = log.tags;
     let organized = raw.trim();
@@ -1291,10 +1377,16 @@ export const localEngine = {
       const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
       const match = cleaned.match(/\{[\s\S]*\}/);
       const parsed = JSON.parse(match ? match[0] : cleaned) as {
+        category?: string;
+        icon?: string;
         title?: string;
         tags?: string[];
         organized?: string;
       };
+      if (parsed.category?.trim()) {
+        const autoMod = findOrCreateLocalAutoCategory(st, parsed.category, parsed.icon);
+        nextModuleId = autoMod.id;
+      }
       if (parsed.title?.trim()) nextTitle = parsed.title.trim().slice(0, 40);
       if (Array.isArray(parsed.tags) && parsed.tags.length > 0) {
         nextTags = Array.from(new Set(parsed.tags.slice(0, 5).map((t) => String(t).trim()).filter(Boolean)));
@@ -1304,7 +1396,8 @@ export const localEngine = {
       // keep raw markdown fallback
     }
 
-    // Preserve log.content untouched! Store organized summary in ai_feedback
+    // Preserve log.content untouched! Update auto-category, title, tags, and organized summary
+    log.module_id = nextModuleId;
     log.title = nextTitle;
     log.tags = nextTags;
     log.ai_feedback = organized;

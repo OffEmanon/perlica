@@ -165,22 +165,88 @@ export function initDb(): void {
   ensureSessionSecret();
 }
 
-const STUDY_ORGANIZE_PROMPT = `你是一位克制、条理清晰的学习笔记整理助手。用户会发给你一段今天随手记下的原始学习记录（可能比较口语化或零散）。
-你的唯一任务是帮用户整理归纳成清晰易复习的笔记，必须严格遵守以下规则：
-1. 【忠于原文，不胡乱编造】严格以用户写下的内容为核心进行归纳，不要凭空编造用户根本没学过的大段章节；但可以对用户提到的数学公式规范化为标准 LaTeX（行内用 $...$，独立公式用 $$...$$），对提到的代码/引擎接口用规范代码块排版。
-2. 【提炼标题与标签】提炼一个简短准确的标题（15字以内），以及 2~4 个精准的知识点标签。
-3. 【结构化归纳】按逻辑将今日所学归纳为简洁的 Markdown 要点（如核心知识点、关键公式/代码、疑难/待巩固点——仅在原文有对应内容时列出，原文简短就精炼分条，不要硬凑空洞大纲）。
-4. 仅返回合法 JSON 对象（不要用 \`\`\`json 包裹），格式严格为：
-{"title": "简短标题", "tags": ["标签1", "标签2"], "organized": "整理归纳后的 Markdown 文本"}`;
+const STUDY_ORGANIZE_PROMPT = `你是一位克制、条理清晰的学习笔记整理与分类助手。用户会发给你一段今天随手记下的原始学习记录（可能比较口语化或零散）。
+你的任务是帮用户自动分类并整理归纳成清晰易复习的笔记，必须严格遵守以下规则：
+1. 【自动分类】根据学习内容判断所属学科或领域分类（2~8字，简洁准确，如：虚幻引擎 UE5、数学分析、C++、计算机图形学、算法等）。如果消息中提供了「已有分类」，且内容明显属于其中某一类，请**优先复用完全一致的已有分类名称**，避免产生重复分类；同时给出一个贴切的单个 Emoji 图标。
+2. 【忠于原文，不胡乱编造】严格以用户写下的内容为核心进行归纳，不要凭空编造用户根本没学过的大段章节；但可以对用户提到的数学公式规范化为标准 LaTeX（行内用 $...$，独立公式用 $$...$$），对提到的代码/引擎接口用规范代码块排版。
+3. 【提炼标题与标签】提炼一个简短准确的标题（15字以内），以及 2~4 个精准的知识点标签。
+4. 【结构化归纳】按逻辑将今日所学归纳为简洁的 Markdown 要点（仅在原文有对应内容时分条，原文简短就精炼分条，不要硬凑空洞大纲）。
+5. 仅返回合法 JSON 对象（不要用 \`\`\`json 包裹），格式严格为：
+{"category": "分类名称", "icon": "📘", "title": "简短标题", "tags": ["标签1", "标签2"], "organized": "整理归纳后的 Markdown 文本"}`;
 
 function ensureStudyOrganizePrompt(): void {
-  const exists = db.prepare("SELECT id FROM prompt_templates WHERE key = 'study_organize'").get();
-  if (!exists) {
+  const existing = db
+    .prepare("SELECT id, system_prompt FROM prompt_templates WHERE key = 'study_organize'")
+    .get() as { id: string; system_prompt: string } | undefined;
+  const now = new Date().toISOString();
+  if (!existing) {
     db.prepare(
       `INSERT INTO prompt_templates (id, key, name, description, system_prompt, updated_at)
-       VALUES (?, 'study_organize', '学习日志自动整理归纳', '保留每日原始学习记录，自动提炼标题、标签并整理为结构化复习要点。', ?, ?)`
-    ).run(uid('tpl'), STUDY_ORGANIZE_PROMPT, new Date().toISOString());
+       VALUES (?, 'study_organize', '学习日志自动分类与整理', '根据记录内容自动归类，并保留原文整理为结构化复习要点。', ?, ?)`
+    ).run(uid('tpl'), STUDY_ORGANIZE_PROMPT, now);
+  } else if (!existing.system_prompt.includes('"category"')) {
+    db.prepare(
+      `UPDATE prompt_templates SET name = ?, description = ?, system_prompt = ?, updated_at = ? WHERE id = ?`
+    ).run(
+      '学习日志自动分类与整理',
+      '根据记录内容自动归类，并保留原文整理为结构化复习要点。',
+      STUDY_ORGANIZE_PROMPT,
+      now,
+      existing.id
+    );
   }
+}
+
+const AUTO_CATEGORY_COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316'];
+
+function pickCategoryIcon(name: string, aiIcon?: string): string {
+  const cleanAi = (aiIcon || '').trim();
+  if (cleanAi && cleanAi.length <= 4 && !/[a-zA-Z0-9]/.test(cleanAi)) return cleanAi;
+  const n = name.toLowerCase();
+  if (/ue|unreal|虚幻|unity|godot|游戏|game/.test(n)) return '🎮';
+  if (/数|微积分|线代|概率|代数|几何|拓扑|math/.test(n)) return '∫';
+  if (/图形|渲染|shader|opengl|vulkan|directx|3d/.test(n)) return '🎨';
+  if (/算法|数据结构|leetcode|刷题/.test(n)) return '🧩';
+  if (/c\+\+|cpp|rust|python|java|ts|js|代码|编程|架构|系统|网络|linux/.test(n)) return '💻';
+  if (/ai|机器学习|深度学习|llm|神经网络/.test(n)) return '🧠';
+  if (/物理|力学|光学/.test(n)) return '🔬';
+  if (/英|日|语|外语/.test(n)) return '🌐';
+  return '📘';
+}
+
+export function ensureUncategorizedModule(): string {
+  const id = 'mod_uncategorized';
+  const exists = db.prepare('SELECT id FROM modules WHERE id = ?').get(id);
+  if (!exists) {
+    db.prepare(
+      `INSERT INTO modules (id, name, icon, color, description, goal, sort_order, archived, created_at)
+       VALUES (?, '未分类', '📝', '#64748b', '', '', 999, 0, ?)`
+    ).run(id, new Date().toISOString());
+  }
+  return id;
+}
+
+export function findOrCreateAutoCategory(categoryName: string, aiIcon?: string): StudyModule {
+  const trimmed = categoryName.trim().slice(0, 20);
+  if (!trimmed || trimmed === '未分类') {
+    const id = ensureUncategorizedModule();
+    return db.prepare('SELECT * FROM modules WHERE id = ?').get(id) as unknown as StudyModule;
+  }
+
+  const all = db.prepare('SELECT * FROM modules WHERE archived = 0').all() as unknown as StudyModule[];
+  const exact = all.find((m) => m.name.trim().toLowerCase() === trimmed.toLowerCase());
+  if (exact) return exact;
+
+  const id = uid('mod');
+  const existingRealCount = all.filter((m) => m.id !== 'mod_uncategorized').length;
+  const color = AUTO_CATEGORY_COLORS[existingRealCount % AUTO_CATEGORY_COLORS.length];
+  const icon = pickCategoryIcon(trimmed, aiIcon);
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO modules (id, name, icon, color, description, goal, sort_order, archived, created_at)
+     VALUES (?, ?, ?, ?, '', '', ?, 0, ?)`
+  ).run(id, trimmed, icon, color, existingRealCount, now);
+  return db.prepare('SELECT * FROM modules WHERE id = ?').get(id) as unknown as StudyModule;
 }
 
 const IDEA_ORGANIZE_PROMPT = `你是一位克制、严谨的灵感整理助手。用户会发给你一段口语化或碎片化的原始游戏灵感。

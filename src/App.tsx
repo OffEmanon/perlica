@@ -68,7 +68,6 @@ export default function App() {
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickKind, setQuickKind] = useState<'idea' | 'study'>('study');
   const [quickContent, setQuickContent] = useState('');
-  const [quickModuleId, setQuickModuleId] = useState('');
   const [quickBusy, setQuickBusy] = useState<'save' | 'ai' | null>(null);
 
   // Toast
@@ -122,11 +121,6 @@ export default function App() {
       setIdeas(i);
       setProviders(p);
       setGithubStatus(g);
-      if (m.length > 0) {
-        setQuickModuleId((cur) => (m.some((item) => item.id === cur) ? cur : m[0].id));
-      } else {
-        setQuickModuleId('');
-      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : '数据加载失败';
       if (msg.includes('访问密码')) {
@@ -287,19 +281,9 @@ export default function App() {
       return;
     }
 
-    const modId = quickModuleId || modules[0]?.id;
-    if (!modId) {
-      setQuickOpen(false);
-      setActiveModuleId('__new__');
-      setTab('study');
-      showToast('请先创建你的第一个学习板块', 'err');
-      return;
-    }
-
     setQuickBusy(autoOrganize ? 'ai' : 'save');
     try {
       const created = await api.createLog({
-        module_id: modId,
         log_date: todayDateString(),
         title: autoTitle || '未命名学习记录',
         content: raw,
@@ -310,14 +294,14 @@ export default function App() {
       if (autoOrganize) {
         try {
           finalLog = await api.organizeLog(created.id);
-          showToast('学习记录已保留原文，AI 整理归纳完成');
+          showToast('学习记录已保留原文，AI 自动分类整理完成');
         } catch (aiErr) {
           showToast(`原文已保存，AI 整理失败：${aiErr instanceof Error ? aiErr.message : ''}`, 'err');
         }
       } else {
         showToast('学习记录已保存');
       }
-      setActiveModuleId(modId);
+      setActiveModuleId('all');
       setSelectedLogId(finalLog.id);
       setTab('study');
       setQuickContent('');
@@ -465,57 +449,39 @@ export default function App() {
             })}
           </nav>
 
-          {/* Direct Module Shortcuts */}
-          <div className="pt-2 border-t border-subtle space-y-1">
-            <div className="flex items-center justify-between px-2 mb-1.5">
-              <span className="text-[11px] font-medium text-muted uppercase tracking-wider">
-                我的学习板块
-              </span>
-              <button
-                onClick={() => {
-                  setActiveModuleId('__new__');
-                  setTab('study');
-                }}
-                title="新建板块"
-                className="text-muted hover:text-indigo-400 transition"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
+          {/* Auto-Generated Category Shortcuts (shown only after records are categorized) */}
+          {modules.some((m) => (m.log_count ?? 0) > 0) && (
+            <div className="pt-2 border-t border-subtle space-y-1">
+              <div className="px-2 mb-1.5">
+                <span className="text-[11px] font-medium text-muted uppercase tracking-wider">
+                  AI 自动分类
+                </span>
+              </div>
+              {modules
+                .filter((m) => (m.log_count ?? 0) > 0)
+                .map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setActiveModuleId(m.id);
+                      setTab('study');
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition ${
+                      tab === 'study' && activeModuleId === m.id
+                        ? 'bg-white/[0.08] text-primary font-medium'
+                        : 'text-secondary hover:text-primary hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                      <span>{m.icon}</span>
+                      <span className="truncate">{m.name}</span>
+                    </span>
+                    <span className="text-[10px] text-muted">{m.log_count ?? 0}</span>
+                  </button>
+                ))}
             </div>
-            {modules.length === 0 ? (
-              <button
-                onClick={() => {
-                  setActiveModuleId('__new__');
-                  setTab('study');
-                }}
-                className="w-full text-left px-2.5 py-2 rounded-lg text-xs text-muted hover:text-primary hover:bg-white/[0.04] transition"
-              >
-                + 点击创建第一个板块
-              </button>
-            ) : (
-              modules.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => {
-                    setActiveModuleId(m.id);
-                    setTab('study');
-                  }}
-                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition ${
-                    tab === 'study' && activeModuleId === m.id
-                      ? 'bg-white/[0.08] text-primary font-medium'
-                      : 'text-secondary hover:text-primary hover:bg-white/[0.04]'
-                  }`}
-                >
-                  <span className="flex items-center gap-2 truncate">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
-                    <span>{m.icon}</span>
-                    <span className="truncate">{m.name}</span>
-                  </span>
-                  <span className="text-[10px] text-muted">{m.log_count ?? 0}</span>
-                </button>
-              ))
-            )}
-          </div>
+          )}
         </div>
 
         {/* Bottom Status Pills: GitHub Sync + AI Engine */}
@@ -618,15 +584,8 @@ export default function App() {
             todayLogs={todayLogs}
             recentIdeas={ideas}
             onRefresh={refreshAll}
-            onOpenNewLog={(modId) => {
-              if (modules.length === 0) {
-                setActiveModuleId('__new__');
-                setTab('study');
-                return;
-              }
-              if (modId) setActiveModuleId(modId);
+            onOpenNewLog={() => {
               setQuickKind('study');
-              if (modId) setQuickModuleId(modId);
               setQuickOpen(true);
             }}
             onOpenNewIdea={() => {
@@ -757,38 +716,6 @@ export default function App() {
               </button>
             </div>
 
-            {quickKind === 'study' && (
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {modules.length === 0 ? (
-                  <button
-                    onClick={() => {
-                      setQuickOpen(false);
-                      setActiveModuleId('__new__');
-                      setTab('study');
-                    }}
-                    className="text-xs text-indigo-400 hover:underline"
-                  >
-                    + 还没有学习板块，点此先新建一个板块
-                  </button>
-                ) : (
-                  modules.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => setQuickModuleId(m.id)}
-                      className={`px-2.5 py-1 rounded-lg text-xs border transition ${
-                        quickModuleId === m.id
-                          ? 'text-white border-transparent'
-                          : 'surface-elevated text-secondary'
-                      }`}
-                      style={quickModuleId === m.id ? { backgroundColor: m.color } : undefined}
-                    >
-                      {m.icon} {m.name}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-
             <textarea
               autoFocus
               rows={5}
@@ -797,7 +724,7 @@ export default function App() {
               placeholder={
                 quickKind === 'idea'
                   ? '随手写一段你的游戏灵感（不用起标题，保留原文，可让 AI 帮你忠实整理）...'
-                  : '写下今天学了什么（不用起标题，保留原文，可让 AI 帮你自动整理归纳）...'
+                  : '写下今天学了什么（不用选分类、不用起标题，AI 会自动为你分类并整理归纳）...'
               }
               className="w-full px-3.5 py-2.5 rounded-xl surface-elevated text-sm focus:outline-none focus:border-indigo-500 resize-none"
             />

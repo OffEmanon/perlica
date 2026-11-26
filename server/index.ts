@@ -27,6 +27,8 @@ import {
   rotateSessionSecret,
   resetUserData,
   recordDeletion,
+  ensureUncategorizedModule,
+  findOrCreateAutoCategory,
 } from './db.ts';
 import {
   callLlm,
@@ -417,7 +419,7 @@ app.get('/api/logs', (req, res) => {
 
 app.post('/api/logs', (req, res) => {
   const {
-    module_id,
+    module_id = '',
     log_date = todayStr(),
     title = '',
     content = '',
@@ -426,7 +428,12 @@ app.post('/api/logs', (req, res) => {
     rating = 0,
     tags = [],
   } = req.body || {};
-  if (!module_id) return res.status(400).json({ error: '请选择学习板块' });
+
+  let resolvedModuleId = String(module_id || '').trim();
+  if (!resolvedModuleId || !db.prepare('SELECT id FROM modules WHERE id = ?').get(resolvedModuleId)) {
+    resolvedModuleId = ensureUncategorizedModule();
+  }
+
   const rawContent = String(content || '');
   const firstLine = rawContent.trim().split(/\r?\n/)[0] || '';
   const fallbackTitle = firstLine.length > 22 ? `${firstLine.slice(0, 22)}...` : firstLine;
@@ -440,7 +447,7 @@ app.post('/api/logs', (req, res) => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?)`
   ).run(
     id,
-    module_id,
+    resolvedModuleId,
     log_date,
     finalTitle,
     rawContent,
@@ -819,7 +826,7 @@ app.post('/api/ai/review', async (req, res) => {
   }
 });
 
-// Single study log organize & summarize (preserve raw text)
+// Single study log auto-classify & organize (preserve raw text)
 app.post('/api/ai/organize-log/:id', async (req, res) => {
   try {
     const row = db.prepare('SELECT * FROM study_logs WHERE id = ?').get(req.params.id) as
@@ -833,13 +840,18 @@ app.post('/api/ai/organize-log/:id', async (req, res) => {
     const provider = getActiveProvider(req.body?.provider_id);
     if (!provider) return res.status(400).json({ error: '请先在设置中配置 AI 模型' });
 
-    const mod = db.prepare('SELECT name FROM modules WHERE id = ?').get(log.module_id) as
-      | { name: string }
-      | undefined;
+    const existingCats = listModulesWithStats()
+      .filter((m) => m.id !== 'mod_uncategorized' && (m.log_count ?? 0) > 0)
+      .map((m) => m.name);
+
     const tpl = getPromptTemplate('study_organize');
     const systemPrompt =
       tpl?.system_prompt ||
-      '请将用户的每日学习记录整理归纳为清晰的 Markdown 笔记，忠于原文不胡乱编造，仅返回 JSON: {"title":"","tags":[],"organized":""}';
+      '请根据内容自动分类，并将用户的每日学习记录整理归纳为清晰的 Markdown 笔记，仅返回 JSON: {"category":"","icon":"📘","title":"","tags":[],"organized":""}';
+
+    const categoryHint = existingCats.length
+      ? `已有自动分类（如属于同类请优先复用完全一致的名称）：${existingCats.join('、')}`
+      : '当前暂无已有分类，请根据内容提炼一个简洁准确的分类名称（如：虚幻引擎 UE5、数学分析、C++ 等）';
 
     const raw = await callLlm(
       provider,
@@ -847,12 +859,13 @@ app.post('/api/ai/organize-log/:id', async (req, res) => {
         { role: 'system', content: systemPrompt },
         {
           role: 'user',
-          content: `所属学习板块：${mod?.name || '学习'}\n学习日期：${log.log_date}\n\n以下是我今天写下的原始学习记录，请帮我整理归纳：\n\n${rawText}`,
+          content: `学习日期：${log.log_date}\n${categoryHint}\n\n以下是我今天写下的原始学习记录，请自动分类并整理归纳：\n\n${rawText}`,
         },
       ],
       { temperature: 0.25 }
     );
 
+    let nextModuleId = log.module_id;
     let nextTitle = log.title;
     let nextTags = log.tags;
     let organized = raw.trim();
@@ -861,10 +874,16 @@ app.post('/api/ai/organize-log/:id', async (req, res) => {
       const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
       const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
       const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as {
+        category?: string;
+        icon?: string;
         title?: string;
         tags?: string[];
         organized?: string;
       };
+      if (parsed.category?.trim()) {
+        const autoMod = findOrCreateAutoCategory(parsed.category, parsed.icon);
+        nextModuleId = autoMod.id;
+      }
       if (parsed.title?.trim()) nextTitle = parsed.title.trim().slice(0, 40);
       if (Array.isArray(parsed.tags) && parsed.tags.length > 0) {
         nextTags = Array.from(new Set(parsed.tags.slice(0, 5).map((t) => String(t).trim()).filter(Boolean)));
@@ -875,14 +894,10 @@ app.post('/api/ai/organize-log/:id', async (req, res) => {
     }
 
     const now = new Date().toISOString();
-    // Preserve log.content untouched! Store organized summary in ai_feedback
-    db.prepare('UPDATE study_logs SET title = ?, tags_json = ?, ai_feedback = ?, updated_at = ? WHERE id = ?').run(
-      nextTitle,
-      JSON.stringify(nextTags),
-      organized,
-      now,
-      log.id
-    );
+    // Preserve log.content untouched! Update module_id (auto-category), title, tags, and ai_feedback
+    db.prepare(
+      'UPDATE study_logs SET module_id = ?, title = ?, tags_json = ?, ai_feedback = ?, updated_at = ? WHERE id = ?'
+    ).run(nextModuleId, nextTitle, JSON.stringify(nextTags), organized, now, log.id);
     scheduleAutoSync();
     const updated = db.prepare('SELECT * FROM study_logs WHERE id = ?').get(log.id) as Record<string, unknown>;
     res.json(mapStudyLog(updated));
